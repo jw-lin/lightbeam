@@ -6,9 +6,8 @@ import os
 os.environ['NUMEXPR_MAX_THREADS'] = '16'
 os.environ['NUMEXPR_NUM_THREADS'] = '16'
 import numexpr as ne
-import h5py
 from mesh import RectMesh3D,RectMesh2D
-import optics2 as optics
+import optics
 import LPmodes
 from misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu,resize
 import matplotlib.pyplot as plt
@@ -46,7 +45,7 @@ def del_mid(arr):
     ''' remove middle two rows from a even-dimensioned 2D array '''
     return np.delete(arr, [int(len(arr)/2-1),int(len(arr)/2)],axis=0)
 
-@njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]),fastmath=True)
+@njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
 def tri_solve_vec(a,b,c,r,g,u):
     '''Apply Thomas' method for simultaneously solving a set of tridagonal systems. a, b, c, and r are matrices
     (n rows by m columns) where each column corresponds a separate system'''
@@ -321,7 +320,7 @@ class Prop3D:
         _dict = _dict = {"a":a,"b":b,"c":c,"u1":u[ix][:-2],"u2":u[ix][1:-1],"u3":u[ix][2:],"n1":_IORsq[:-2],"n2":_IORsq[1:-1],"n3":_IORsq[2:],"r3":R3[m],"r2":R2[m],"r1":R1[m] }
         _eval = "(a+0.25*r3*n1)*u1 + (b+0.25*r2*n2)*u2 + (c+0.25*r1*n3)*u3"
 
-        ne.evaluate(_eval,local_dict=_dict,out=_rmat[ix][1:-1],optimization="aggressive")
+        ne.evaluate(_eval,local_dict=_dict,out=_rmat[ix][1:-1])
 
         _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
@@ -404,8 +403,8 @@ class Prop3D:
 
         #initial mesh refinement
         print("initial remesh")
-        xy.refine_base(np.real(u0*np.conj(u0)),ucrit)
-        
+        xy.refine_base_alt(u0,ucrit)
+
         weights = xy.get_weights()
 
         #now resample the field onto the smaller *non-uniform* xy mesh
@@ -442,9 +441,8 @@ class Prop3D:
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
 
-
+        print("initial shape: ",xy.shape)
         for i in range(total_iters):
-            print(xy.shape)
             printProgressBar(i,total_iters)
             u0 = xy.get_base_field(u)
             u0c = np.conj(u0)
@@ -470,16 +468,16 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
-
+                #xy.plot_mesh(4)
+                
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
                     base = xy.get_base_field(IORsq__)
                     self.n02 = xy.dx0*xy.dy0*np.real(np.sum(u0c*u0*base))/self.k02
 
-                #redo nonuniform grid
-                xy.refine_base(np.real(u0*u0c),ucrit)
-                u = xy.resample_complex(u)
+                #reset the grid
+                xy.reset()
 
                 #expand the grid if necessary
                 new_xw = mesh.xwfunc(__z)
@@ -487,11 +485,17 @@ class Prop3D:
                 expanded = xy.expand(new_xw,new_yw)
 
                 if expanded:
-                    #now we need to pad u with zeros to make sure it matches the new space
-                    xpad = int((xy.shape[0]-u.shape[0])/2)
-                    ypad = int((xy.shape[1]-u.shape[1])/2)
+                    #now we need to pad u,u0 with zeros to make sure it matches the new space
+                    xpad = int((xy.shape0[0]-u0.shape[0])/2)
+                    ypad = int((xy.shape0[1]-u0.shape[1])/2)
                     u = np.pad(u,((xpad,xpad),(ypad,ypad)))
-                
+                    u0 = np.pad(u0,((xpad,xpad),(ypad,ypad)))
+
+                #subdivide the nuniform grid
+                xy.refine_base_alt(u0,ucrit)
+ 
+                u = xy.resample_complex(u)
+
                 self.optical_system.set_sampling(xy)
 
                 self.update_grid_cor_facs('x')
@@ -504,7 +508,6 @@ class Prop3D:
 
                 self.set_IORsq(IORsq__,z__)
                 
-
                 #precompute things that will be reused
                 self._trimats_precomp('x')
                 self._trimats_precomp('y')

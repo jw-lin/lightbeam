@@ -182,48 +182,15 @@ class lant5(OpticSys):
         
         super().__init__(elmnts,nb)
 
-
-'''
-core0.set_sampling(mesh)
-
-out = np.full_like(mesh.xg,1.4*1.4)
-core0.set_IORsq(out,0)
-
-plt.imshow(out)
-plt.show()
-
-xg,yg = np.meshgrid(mesh.xa,mesh.ya,indexing='ij')
-rg2 = yg*yg+xg*xg
-
-gauss = np.exp(-rg2/100)
-avg = np.sum(gauss)/(108*108)
-m = avg*10
-
-mesh.remesh(gauss,m,mode="max")
-
-core0.set_sampling(mesh)
-out = np.full_like(mesh.xg,1.4*1.4)
-core0.set_IORsq(out,0)
-
-plt.imshow(out)
-plt.show()
-'''
-
-
-'''
-yg,xg = np.meshgrid(mesh.xa,mesh.ya)
-
-rg2 = (yg-50)*(yg-50)+xg*xg
-
-gauss2 = np.exp(-rg2/100)
-
-
-mesh.remesh(gauss2,.1)
-
-gauss3 = mesh.resample(gauss2)
-
-gauss3 = mesh.get_base_field(gauss3)
-
-plt.imshow(gauss3,extent=(-58,58,-58,58),origin="lower")
-mesh.plot_mesh()
-'''
+class lant5big(OpticSys):
+    '''corrigan et al. 2018 style photonic lantern except the jacket is fkin huge'''
+    def __init__(self,rcore,rclad,rjack,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
+        core0 = scaled_cyl([0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([0,offset0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core3 = scaled_cyl([-offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core4 = scaled_cyl([0,-offset0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad,core4,core3,core2,core1,core0]
+        
+        super().__init__(elmnts,njack)

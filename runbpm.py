@@ -20,6 +20,9 @@ args = parser.parse_args()
 ## ANTIALIASING ON A NONUNIFORM MESH?? -- this turned out to be easy
 ### TRANSFORM IOR FIRST, THEN COMPUTE OVER UV GRID -- this doesn't work
 
+## better refinement method ## -- now theres a weight factor for the 2nd derivative
+
+
 ################################
 ###       BPM Settings       ###
 ################################
@@ -38,7 +41,8 @@ nclad = 1.444
 njack = 1.4431
 offset = 50 * scale
 
-lant = optics.lant5(rcore,rclad,rjack,ncore,nclad,njack,offset,zex,final_scale=1/scale)
+#lant = optics.lant5(rcore,rclad,rjack,ncore,nclad,njack,offset,zex,final_scale=1/scale)
+lant = optics.lant5big(rcore,rclad,rjack,ncore,nclad,njack,offset,zex,final_scale=1/scale)
 
 #######################################
 ## set optical item being simulated) ##
@@ -63,7 +67,7 @@ dz = 2
 #################################################
 ## set how transversal size of mesh grows w/ z ##
 
-xw_func = lambda z: min((460 - 130) * z/zex + 130,xw)
+xw_func = lambda z: (440 - 120) * z/zex + 120
 yw_func = xw_func
 
 mesh = RectMesh3D(xw,yw,zw,ds,dz,PML,xw_func,yw_func)
@@ -91,11 +95,12 @@ dynamic_n0 = False #this computes a power-weighted avergae of the actual IOR, se
 
 #####################
 ## mesh refinement ##
-ucrit = 0.006**2 # the lower the slower!
+ucrit = 1.5e-7 # the lower the slower!
 remesh_every = 50 #^^^
-max_refinement_ratio = 64
+max_refinement_ratio = 128
 
 mesh.xy.max_ratio = max_refinement_ratio
+mesh.xy.max_iters = 8
 
 ################################
 ## slicing of simulation data ##

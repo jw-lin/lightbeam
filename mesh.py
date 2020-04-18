@@ -55,6 +55,8 @@ class RectMesh2D:
 
         self.updatecoords2(self.rfacxa,self.rfacya)
 
+        self.max_iters = 8
+
         #if u0 is not None:
         #    self.refine_base(u0,ucrit)
     
@@ -83,8 +85,8 @@ class RectMesh2D:
         new_xa = self.dxa2xa(new_dxa)
         new_ya = self.dxa2xa(new_dya)
 
-        self.xa_last = self.xa
-        self.ya_last = self.ya
+        #self.xa_last = self.xa
+        #self.ya_last = self.ya
         self.xa = new_xa
         self.ya = new_ya
 
@@ -147,6 +149,89 @@ class RectMesh2D:
 
         self.shape = (len(new_xa),len(new_ya))
     
+    def updatecoords3(self,rfacxa,rfacya):
+        self.rfacxa = rfacxa
+        self.rfacya = rfacya
+
+        xix_base = np.empty(len(rfacxa)+1,dtype=int)
+        yix_base = np.empty(len(rfacya)+1,dtype=int)
+
+        xix_base[0] = 0
+        yix_base[0] = 0
+
+        xix_base[1:] = np.cumsum(rfacxa)
+        yix_base[1:] = np.cumsum(rfacya)
+
+        self.xix_base = xix_base[self.xix_base]
+        self.yix_base = yix_base[self.yix_base]
+
+        new_dxa = np.repeat(self.dxa[1:]/rfacxa,rfacxa)
+        new_dya = np.repeat(self.dya[1:]/rfacya,rfacya)
+
+        new_xa = self.dxa2xa(new_dxa)
+        new_ya = self.dxa2xa(new_dya)
+
+        self.xa = new_xa
+        self.ya = new_ya
+
+        rxa = np.empty_like(self.xa,dtype=float)
+        rxa[1:-1] = new_dxa[1:]/new_dxa[:-1]
+        rxa[0] = 1
+        rxa[-1] = 1
+        self.rxa = rxa
+
+        rya = np.empty_like(self.ya,dtype=float)
+        rya[1:-1] = new_dya[1:]/new_dya[:-1]
+        rya[0] = 1
+        rya[-1] = 1
+        self.rya = rya
+
+        self.dxa = np.empty_like(self.xa)
+        self.dxa[1:] = new_dxa
+        self.dxa[0] = self.dxa[1]
+
+        self.dya = np.empty_like(self.ya)
+        self.dya[1:] = new_dya
+        self.dya[0] = self.dya[1]
+
+        self.xres,self.yres = len(self.xa),len(self.ya)
+
+        self.xg,self.yg = np.meshgrid(new_xa,new_ya,indexing='ij')
+
+        #offset grids
+        xhg = np.empty(( self.xg.shape[0] + 1 , self.xg.shape[1] ))
+        yhg = np.empty(( self.yg.shape[0] , self.yg.shape[1] + 1 ))
+
+        ne.evaluate("(a+b)/2",local_dict={"a":self.xg[1:],"b":self.xg[:-1]},out=xhg[1:-1])
+        ne.evaluate("(a+b)/2",local_dict={"a":self.yg[:,1:],"b":self.yg[:,:-1]},out=yhg[:,1:-1])
+
+        #xhg[1:-1] = (self.xg[1:] + self.xg[:-1])/2
+        #yhg[:,1:-1] = (self.yg[:,1:]+self.yg[:,:-1])/2
+
+        xhg[0] = self.xg[0] - self.dxa[0]*0.5
+        xhg[-1] = self.xg[-1] + self.dxa[-1]*rxa[-1]*0.5
+
+        yhg[:,0] = self.yg[:,0] - self.dya[0]*0.5
+        yhg[:,-1] = self.yg[:,-1] + self.dya[-1]*self.rya[-1]*0.5
+
+        self.xhg,self.yhg = xhg,yhg
+
+        #self.weights = (xhg[1:]-xhg[:-1]) * (yhg[:,1:]-yhg[:,:-1])
+        self.weights = self.get_weights()
+        
+        #ix = self.cvert_ix
+
+        #get views of computational region of arrs
+        '''
+        self.cxa = self.xa[ix]
+        self.cya = self.ya[ix]
+        self.cdxa = self.dxa[ix]
+        self.cdya = self.dya[ix]
+        self.crxa = self.rxa[ix]
+        self.crya = self.rya[ix]
+        '''
+
+        self.shape = (len(new_xa),len(new_ya))
     def get_weights(self):
         xhg,yhg = self.xhg,self.yhg
         weights = ne.evaluate("(a-b)*(c-d)",local_dict={"a":xhg[1:],"b":xhg[:-1],"c":yhg[:,1:],"d":yhg[:,:-1]})
@@ -166,7 +251,7 @@ class RectMesh2D:
         imags = self.resample(imags,xa,ya,newxa,newya)
         return reals+1.j*imags
 
-    def refine_base(self,u0,ucrit):
+    def refine_base(self,u0,ucrit,maxr=None):
         '''split the mesh until a max of du is stored in each cell'''
 
         #umid = ne.evaluate("0.25*(u1+u2+u3+u4)",local_dict={"u1":u0[1:,1:],"u2":u0[:-1,1:],"u3":u0[1:,:-1],"u4":u0[:-1,:-1]})
@@ -174,6 +259,9 @@ class RectMesh2D:
         #umid = 0.25 * (u0[1:,1:]+u0[:-1,1:]+u0[1:,:-1]+u0[:-1,:-1])
         #umaxx = np.max(umid,axis=1)
         #umaxy = np.max(umid,axis=0)
+
+        if maxr is None:
+            maxr = self.max_ratio
 
         ix = self.ccel_ix
 
@@ -186,16 +274,54 @@ class RectMesh2D:
         rfacxa = np.full_like(umaxx,1,dtype=int)
         _rx = umaxx[ix]/ucrit
 
-        mask = (_rx>TOL)
-        rfacxa[ix][mask] = np.clip(np.power(2,np.ceil(np.log2(_rx[mask]))),1,self.max_ratio )
+        mask = (_rx>1)
+        rfacxa[ix][mask] = np.clip(np.power(2,np.ceil(np.log2(_rx[mask]))),1, maxr )
 
         rfacya = np.full_like(umaxy,1,dtype=int)
         _ry = umaxy[ix]/ucrit
-        mask = (_ry>TOL)
-        rfacya[ix][mask] = np.clip(np.power(2,np.ceil(np.log2(_ry[mask]))),1,self.max_ratio )
+        mask = (_ry>1)
+        rfacya[ix][mask] = np.clip(np.power(2,np.ceil(np.log2(_ry[mask]))),1, maxr)
 
         self.updatecoords2(rfacxa,rfacya)
-        
+    
+    def refine_by_two(self,u0,ucrit):
+
+        ix = self.ccel_ix
+        umaxx = np.max(u0,axis=1)
+        umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
+
+        umaxy = np.max(u0,axis=0)
+        umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
+
+        rfacxa = np.full_like(umaxx,1,dtype=int)
+        _rx = umaxx[ix]*self.dxa[1:][ix]/ucrit
+
+        mask = (_rx>1)
+        rfacxa[ix][mask] = 2
+
+        rfacya = np.full_like(umaxy,1,dtype=int)
+        _ry = umaxy[ix]*self.dya[1:][ix]/ucrit
+        mask = (_ry>1)
+        rfacya[ix][mask] = 2
+
+        xa_old = np.copy(self.xa)
+        ya_old = np.copy(self.ya)
+
+        self.updatecoords3(rfacxa,rfacya)
+
+        return self.resample(u0,xa_old,ya_old,self.xa,self.ya)
+    
+    def reset(self):
+        self.xa_last = self.xa
+        self.ya_last = self.ya
+        xres,yres = self.shape0
+        self.rfacxa,self.rfacya = np.full(xres-1,1),np.full(yres-1,1)
+        self.updatecoords2(self.rfacxa,self.rfacya)
+
+    def refine_base2(self,u0,ucrit):
+        for i in range(self.max_iters):
+            u0 = self.refine_by_two(u0,ucrit)
+
     def plot_mesh(self,reduce_by = 1,show=True):
         i = 0
         for x in self.xa:
@@ -216,7 +342,7 @@ class RectMesh2D:
     
     def expand(self,new_xw,new_yw):
         '''expand grid to encompass new size by tiling new dx0 x dy0 cells around the grid boudary. grid stays 0-centered '''
-        Nbc = self.Nbc
+        Nbc = self.Nbc 
 
         xwr = 2*math.ceil(new_xw/2/self.dx0)
         ywr = 2*math.ceil(new_yw/2/self.dy0)
@@ -228,15 +354,21 @@ class RectMesh2D:
         if (new_xw == self.xw) and (new_yw == self.yw):
             return False
 
-        #snap new grid dims to the dx0 dy0 grid
-
         #for base mesh!
         new_xres = xwr + 1 + 2 * Nbc
         new_yres = ywr + 1 + 2 * Nbc
         new_shape = ( new_xres , new_yres )
 
+        #snap new grid dims to the dx0 dy0 grid
+
         dx,dy = self.dx0,self.dy0
 
+        xex = int((new_xres - self.shape0[0])/2)
+        yex = int((new_yres - self.shape0[1])/2)
+
+        self.xa_last = np.hstack( (np.linspace(-new_xw/2-Nbc*dx,-self.xw/2-dx-Nbc*dx,xex),self.xa_last,np.linspace(self.xw/2+Nbc*dx+dx,new_xw/2+Nbc*dx,xex) ) )
+        self.ya_last = np.hstack( (np.linspace(-new_yw/2-Nbc*dy,-self.yw/2-dy-Nbc*dy,yex),self.ya_last,np.linspace(self.yw/2+Nbc*dy+dy,new_yw/2+Nbc*dy,yex) ) )
+    
         #rewrite some mesh parameters ...
         self.xa0 = np.linspace(-new_xw/2-Nbc*dx,new_xw/2+Nbc*dx,new_shape[0])
         self.ya0 = np.linspace(-new_yw/2-Nbc*dy,new_yw/2+Nbc*dy,new_shape[1])
@@ -266,6 +398,47 @@ class RectMesh2D:
 
         return True
 
+    def refine_by_two_alt(self,u0,crit_val):
+
+        ix = self.ccel_ix
+
+        xdif2 = np.empty_like(u0,dtype=np.complex128)
+        xdif2[1:-1] = u0[2:]+u0[:-2] - 2 * u0[1:-1]
+
+        xdif2[0] = xdif2[-1] = 0
+
+        ydif2 = np.empty_like(u0,dtype=np.complex128)
+        ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2 * u0[:,1:-1]
+
+        ydif2[:,0] = ydif2[:,-1] = 0
+
+        umaxx = np.max(np.abs(xdif2),axis=1)*np.max(np.abs(u0),axis=1)
+        umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
+
+        umaxy = np.max(np.abs(ydif2),axis=0)*np.max(np.abs(u0),axis=0)
+        umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
+
+        rfacxa = np.full_like(umaxx,1,dtype=int)
+        _rx = umaxx[ix]*self.dxa[1:][ix]/crit_val
+
+        mask = (_rx>1)
+        rfacxa[ix][mask] = 2
+
+        rfacya = np.full_like(umaxy,1,dtype=int)
+        _ry = umaxy[ix]*self.dya[1:][ix]/crit_val
+        mask = (_ry>1)
+        rfacya[ix][mask] = 2
+
+        xa_old = np.copy(self.xa)
+        ya_old = np.copy(self.ya)
+
+        self.updatecoords3(rfacxa,rfacya)
+
+        return self.resample_complex(u0,xa_old,ya_old,self.xa,self.ya)
+
+    def refine_base_alt(self,u0,ucrit):
+        for i in range(self.max_iters):
+            u0 = self.refine_by_two_alt(u0,ucrit)
 
 class RectMesh3D:
     def __init__(self,xw,yw,zw,ds,dz,PML=4,xwfunc=None,ywfunc=None):
@@ -319,10 +492,105 @@ class RectMesh3D:
         '''dimensionless, divided by e0 omega'''
         return np.where(np.abs(y)>self.xy.yw/2.,power((np.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
 
+'''
+plt.style.use('dark_background')
+u0 = np.load("PSF0lo.npy")
+u0/=np.max(np.abs(u0))
+xdif2 = np.empty_like(u0,dtype=np.complex128)
+xdif2[1:-1] = u0[2:]+u0[:-2] - 2 * u0[1:-1]
 
-#plt.style.use('dark_background')
+xdif2[0] = xdif2[-1] = 0
+
+ydif2 = np.empty_like(u0,dtype=np.complex128)
+ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2 * u0[:,1:-1]
+
+ydif2[:,0] = ydif2[:,-1] = 0
+
+#plt.imshow(np.abs(u0))
+#plt.show()
+_xdif2 = np.abs(xdif2)
+_xdif2 /= np.max(_xdif2)
+
+#plt.imshow(np.abs(u0))
+#plt.show()
+
+#plt.imshow(_xdif2)
+#plt.show()
 
 
+#plt.imshow(np.abs(ydif2))
+#plt.show()
+import cv2
+from misc import resize
+u0 = resize(u0,(237,237))
+
+c = 2e-4
+
+xy = RectMesh2D(440,440,2,2,8)
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(8)
+
+u0 = xy.refine_by_two_dif(u0,c)
+print(xy.shape)
+#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh()
+
+print(xy.shape)
+
+'''
+'''
+c = 0.0012
+
+u0 = np.load("PSF0lo.npy")
+
+xy = RectMesh2D(440,440,0.5,0.5,8)
+
+plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(16)
+
+xy.refine_base2(np.abs(u0),c)
+plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
+xy.plot_mesh(16)
+
+print(xy.shape)
+
+xy.reset()
+xy.plot_mesh(16)
+
+print(xy.shape)
+'''
 '''
 print(xy.shape)
 
