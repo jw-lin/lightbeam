@@ -5,6 +5,15 @@ import geom
 from typing import List
 from mesh import RectMesh2D
 
+### to do
+
+# some ideas
+#       -currently have outer bbox to speed up raster. maybe an inner bbox will also speed things up? this would force fancy indexing though...
+#           -but the boundary region between inner and outer bbox could also be split into four contiguous blocks
+#       -extension to primitives with elliptical cross sections
+#           -I don't think this is that hard. An ellipse is a stretched circle. So antialiasing the ellipse on a rectangular grid is the same
+#            as antialiasing a circle on another (stretched) rectangular grid.
+
 class OpticPrim:
     '''base class for optical primitives (simple 3D shapes with a single IOR value)'''
     

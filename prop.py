@@ -4,28 +4,39 @@ from numpy import exp,dot,full,cos,sin,real,imag,power,pi,log,sqrt,roll,linspace
 from numba import njit,jit,complex128 as nbc128, void
 import os
 os.environ['NUMEXPR_MAX_THREADS'] = '16'
-os.environ['NUMEXPR_NUM_THREADS'] = '16'
+os.environ['NUMEXPR_NUM_THREADS'] = '8'
 import numexpr as ne
 from mesh import RectMesh3D,RectMesh2D
 import optics
-import LPmodes
 from misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu,resize
+import dask
+import dask.array as da
+
 import matplotlib.pyplot as plt
 plt.style.use('dark_background')
-## to do ##
 
-# fix the pml correction on rmat (fancy indexing copies) - done
-# save some values after every remesh to reuse in recalcing trimats, etc - done
-# move matrixes calcs into numexpr - done
+### to do ###
 
-# automatic updating of n0 - simple scheme implemented
+## performance
+
+# full size mesh giving different results than expanding mesh?
+# _trimatsm gives different results than _trimats?
 # maybe adaptive z stepping
-# get a better refinement criterion
-# compute r = 1 and r=/=1 points separately?
-# expand jacket
+# get a better refinement criterion -- now weighting partially by 2nd deriv. still could use some work
+# compute r = 1 and r=/=1 points separately? -- IN PROGRESS -- WHY IS THIS SLOWER
 
-# some optimizations: compute r1 nu, r2 nu, etc, separately (don't think this will work?)
-# reuse __IORsq r1, etc as IORsq__ r1 in the next step  (also don't think this will work?)
+# more efficient ways to store arrays with many repeated values 
+
+# optimize tri_solve_vec : maybe try out dask (parallelize) -- WHY IS THIS ALSO SLOWER AHHHH
+
+#ignore shifting of IOR arrays in trimats calc?
+
+## readability
+
+# actually add doc strings
+# combine some functions into "remesh" and "recompute" functions
+# remove unused functions
+# move all the eval strings somewhere else (together)
 
 ncore = 1.45397
 nclad = 1.444
@@ -36,19 +47,25 @@ v1 = nclad*nclad
 v2 = ncore*ncore
 
 def genc(shape):
-    return np.empty(shape,dtype=c128)
+    return np.empty(shape,dtype=c128,order='F')
 
 def genf(shape):
-    return np.empty(shape,dtype=c128)
+    return np.empty(shape,dtype=c128,order='F')
 
-def del_mid(arr):
-    ''' remove middle two rows from a even-dimensioned 2D array '''
-    return np.delete(arr, [int(len(arr)/2-1),int(len(arr)/2)],axis=0)
 
-@njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
+def tri_solve_vec_p(a,b,c,r,g,u):
+    lazy_results = []
+    for i in range(a.shape[1]):
+        lazy_result = dask.delayed(tri_solve_vec)(a[:,i],b[:,i],c[:,i],r[:,i],g[:,i],u[:,i])
+        lazy_results.append(lazy_result)
+
+    futures = dask.persist(*lazy_results)
+    dask.compute(*futures)
+
+@njit#(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
 def tri_solve_vec(a,b,c,r,g,u):
     '''Apply Thomas' method for simultaneously solving a set of tridagonal systems. a, b, c, and r are matrices
-    (n rows by m columns) where each column corresponds a separate system'''
+    (N rows) where each column corresponds a separate system'''
 
     N = a.shape[0]
     beta = b[0]
@@ -64,7 +81,7 @@ def tri_solve_vec(a,b,c,r,g,u):
         u[k] = u[k] - g[k+1]*u[k+1]
 
 class Prop3D:
-    '''beam propagator. employs finite-differences beam propagation (crank-nicolson alpha=0.5) with PML as the boundary condition'''
+    '''beam propagator. employs finite-differences beam propagation with PML as the boundary condition. works on an adaptive mesh'''
     def __init__(self,wl0,mesh:RectMesh3D,optical_system:optics.OpticSys,n0):
         
         xymesh = mesh.xy
@@ -88,6 +105,9 @@ class Prop3D:
 
         self.xgrid_cor_facs = [[]]*3
         self.ygrid_cor_facs = [[]]*3
+
+        self.xgrid_cor_mask = []
+        self.ygrid_cor_mask = []
 
         ## precomputing some stuff ##
 
@@ -115,8 +135,26 @@ class Prop3D:
         self.b0y_ = None
         self.c0y_ = None
 
-        ## same as above but in PML zone
+        '''        
+        self._apmlx = - 0.5/dx02*Tdox 
+        self._bpmlx = sig + Rx/dx02 - 0.25 * K
+        self._cpmlx = - 0.5/dx02*Tupx
 
+        self.apmlx_ = 0.5/dx02*Tdox
+        self.bpmlx_ = sig - Rx/dx02 + 0.25 * K
+        self.cpmlx_ = 0.5/dx02*Tupx
+
+        self._apmly = - 0.5/dy02*Tdoy
+        self._bpmly = sig + Ry/dy02 - 0.25 * K
+        self._cpmly = - 0.5/dy02*Tupy
+
+        self.apmly_ = 0.5/dy02*Tdoy
+        self.bpmly_ = sig - Ry/dy02 + 0.25 * K
+        self.cpmly_ = 0.5/dy02*Tupy
+        '''
+
+        ## same as above but in PML zone
+        
         self._apmlx = sig/12. - 0.5/dx02*Tdox - K/48.
         self._bpmlx = 5./6.*sig + Rx/dx02 - 5./24. * K
         self._cpmlx = sig/12. - 0.5/dx02*Tupx - K/48.
@@ -132,16 +170,22 @@ class Prop3D:
         self.apmly_ = sig/12. + 0.5/dy02*Tdoy + K/48.
         self.bpmly_ = 5./6.*sig - Ry/dy02 + 5./24. * K
         self.cpmly_ = sig/12. + 0.5/dy02*Tupy + K/48.
+        
 
         self.half_dz = mesh.dz/2.
 
         self.power = np.empty((mesh.zres,))
         self.totalpower = np.empty((mesh.zres,))
 
+
     def allocate_mats(self):
         sx,sy = self.mesh.xy.xg.shape,self.mesh.xy.yg.T.shape
         _trimatsx = (genc(sx),genc(sx),genc(sx))
         _trimatsy = (genc(sy),genc(sy),genc(sy))
+
+        trimatsx_ = (genc(sx),genc(sx),genc(sx))
+        trimatsy_ = (genc(sy),genc(sy),genc(sy))
+
         rmatx,rmaty = genc(sx),genc(sy)
         gx = genc(sx)
         gy = genc(sy)
@@ -152,7 +196,7 @@ class Prop3D:
         _IORsq_ = np.full(sx,fill,dtype=f64)
         __IORsq = np.full(sx,fill,dtype=f64)
 
-        return _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq
+        return _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq
 
     def check_z_inv(self):
         return self.optical_system.z_invariant
@@ -201,10 +245,14 @@ class Prop3D:
         ix = xy.cvert_ix
         if which=='x':
             r = xy.rxa[ix]
+            self.xgrid_cor_mask = np.where(r[1:-1]==1)[0]
+            self.xgrid_cor_imask = np.where(r[1:-1]!=1)[0]
         else:
             r = xy.rya[ix]
+            self.ygrid_cor_mask = np.where(r[1:-1]==1)[0]
+            self.ygrid_cor_imask = np.where(r[1:-1]!=1)[0]
         r2 = r*r
-
+        
         ## alternative values from paper
 
         R1 = (r2 + r -1)/(6*r*(r+1))
@@ -224,7 +272,7 @@ class Prop3D:
             self.ygrid_cor_facs[1] = R2
             self.ygrid_cor_facs[2] = R3
 
-    def _trimats_precomp(self,which='x'):
+    def precomp_trimats(self,which='x'):
         ix = self.mesh.xy.cvert_ix
         s = self.sig    
         nu0 = -self.k02*self.n02
@@ -248,6 +296,78 @@ class Prop3D:
             self._b0y = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
             self._c0y = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
         
+    def precomptrimats_(self,which='x'):
+        ix = self.mesh.xy.cvert_ix
+        s = self.sig    
+        nu0 = -self.k02*self.n02
+
+        eval1 = "s*r3 + 1/(r+1)/(d*d) + 0.25*r3*n"
+        eval2 = "s*r2 - 1/r/(d*d) + 0.25*r2*n"
+        eval3 = "s*r1 + 1/r/(r+1)/(d*d) + 0.25*r1*n"
+
+        if which == 'x':
+            R1,R2,R3 = self.xgrid_cor_facs
+            r = self.mesh.xy.rxa[ix]
+            dla = self.mesh.xy.dxa[ix]
+            self.a0x_ = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
+            self.b0x_ = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
+            self.c0x_ = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
+        else:
+            R1,R2,R3 = self.ygrid_cor_facs
+            r = self.mesh.xy.rya[ix]
+            dla = self.mesh.xy.dya[ix]
+            self.a0y_ = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
+            self.b0y_ = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
+            self.c0y_ = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
+
+
+    def _trimatsm(self,out,IORsq,which='x'):
+        ix = self.mesh.xy.cvert_ix
+        _IORsq = IORsq[ix]
+
+        if which == 'x':
+            R1,R2,R3 = self.xgrid_cor_facs
+            r = self.mesh.xy.rxa[ix]
+            dla = self.mesh.xy.dxa[ix]
+            a,b,c = self._a0x,self._b0x,self._c0x
+            r1iix = self.xgrid_cor_imask
+        else:
+            R1,R2,R3 = self.ygrid_cor_facs
+            r = self.mesh.xy.rya[ix]
+            dla = self.mesh.xy.dya[ix]
+            a,b,c = self._a0y,self._b0y,self._c0y
+            r1iix = self.ygrid_cor_imask
+        
+        _a,_b,_c = out
+
+        s = self.sig
+
+        eval1 = "a - 0.25*r3*n1"
+        eval2 = "b - 0.25*r2*n2"
+        eval3 = "c - 0.25*r1*n3"
+        eval1_alt = "a - n1/48."
+        eval2_alt = "b - 5./24.*n2"
+        eval3_alt = "c - n3/48."
+
+        ne.evaluate(eval1_alt,local_dict={"a":a,"n1":_IORsq[:-1]},out=_a[ix][1:])
+        ne.evaluate(eval2_alt,local_dict={"b":b,"n2":_IORsq},out=_b[ix])
+        ne.evaluate(eval3_alt,local_dict={"c":c,"n3":_IORsq[1:]},out=_c[ix][:-1])
+
+        _a[ix][1:-1][r1iix] = ne.evaluate(eval1,local_dict={"a":a[:-1][r1iix],"r3":R3[1:-1,None][r1iix],"n1":_IORsq[:-2][r1iix] })
+        _b[ix][1:-1][r1iix] = ne.evaluate(eval2,local_dict={"b":b[1:-1][r1iix],"r2":R2[1:-1,None][r1iix],"n2":_IORsq[1:-1][r1iix] })
+        _c[ix][1:-1][r1iix] = ne.evaluate(eval3,local_dict={"c":c[1:][r1iix],"r1":R1[1:-1,None][r1iix],"n3":_IORsq[2:][r1iix] })
+
+        #do I need this correction?
+
+        if r[0] != 1:
+            _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
+            _b[ix][0] = s*R2[0] + 1. / (r[0] * dla[0]*dla[0]) - 0.25*R2[0]*(_IORsq[0]-self.n02*self.k02)
+            _c[ix][0] = s*R1[0] - 1/r[0]/(r[0]+1)/(dla[0]*dla[0]) - 0.25*R1[0]*(_IORsq[0]-self.n02*self.k02)
+        if r[-1] != 1:
+            _a[ix][-1] = s*R3[-1] - 1. / ((r[-1]+1) * dla[-1]*dla[-1]) - 0.25*R3[-1]*(_IORsq[-1]-self.n02*self.k02)
+            _b[ix][-1] = s*R2[-1] + 1. / (r[-1] * dla[-1]*dla[-1]) - 0.25*R2[-1]*(_IORsq[-1]-self.n02*self.k02)
+            _c[ix][-1] = s*R1[-1] - 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) - 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
+
 
     def _trimats(self,out,IORsq,which='x'):
         ''' calculate the tridiagonal matrices in the computational zone '''
@@ -260,19 +380,21 @@ class Prop3D:
             r = self.mesh.xy.rxa[ix]
             dla = self.mesh.xy.dxa[ix]
             a,b,c = self._a0x,self._b0x,self._c0x
+            
         else:
             R1,R2,R3 = self.ygrid_cor_facs
             r = self.mesh.xy.rya[ix]
             dla = self.mesh.xy.dya[ix]
             a,b,c = self._a0y,self._b0y,self._c0y
+            
+        _a,_b,_c = out
 
         s = self.sig
 
         eval1 = "a - 0.25*r3*n"
         eval2 = "b - 0.25*r2*n"
         eval3 = "c - 0.25*r1*n"
-
-        _a,_b,_c = out
+        
         ne.evaluate(eval1,local_dict={"a":a,"r3":R3[1:,None],"n":_IORsq[:-1]},out=_a[ix][1:])
         ne.evaluate(eval2,local_dict={"b":b,"r2":R2[:,None],"n":_IORsq},out=_b[ix])
         ne.evaluate(eval3,local_dict={"c":c,"r1":R1[:-1,None],"n":_IORsq[1:]},out=_c[ix][:-1])
@@ -298,6 +420,112 @@ class Prop3D:
 
         _rmat[pix] = temp
 
+    def trimats_(self,out,IORsq,which='x'):
+        ix = self.mesh.xy.cvert_ix
+        _IORsq = IORsq[ix]
+
+        if which == 'x':    
+            R1,R2,R3 = self.xgrid_cor_facs
+            dla = self.mesh.xy.dxa[ix]
+            r = self.mesh.xy.rxa[ix]
+            a,b,c = self.a0x_,self.b0x_,self.c0x_
+        else:
+            R1,R2,R3 = self.ygrid_cor_facs
+            dla = self.mesh.xy.dya[ix]
+            r = self.mesh.xy.rya[ix] 
+            a,b,c = self.a0y_,self.b0y_,self.c0y_
+
+        s = self.sig
+
+        eval1 = "(a + 0.25*r3*n)"
+        eval2 = "(b + 0.25*r2*n)"
+        eval3 = "(c + 0.25*r1*n)"
+
+        a_,b_,c_ = out
+        ne.evaluate(eval1,local_dict={"a":a,"r3":R3[1:,None],"n":_IORsq[:-1]},out=a_[ix][1:])
+        ne.evaluate(eval2,local_dict={"b":b,"r2":R2[:,None],"n":_IORsq},out=b_[ix])
+        ne.evaluate(eval3,local_dict={"c":c,"r1":R1[:-1,None],"n":_IORsq[1:]},out=c_[ix][:-1])
+
+        a_[ix][0] = s*R3[0] + 1. / ((r[0]+1) * dla[0]*dla[0]) + 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
+        c_[ix][-1] = s*R1[-1] + 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) + 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
+    
+    def trimatsm_(self,out,IORsq,which='x'):
+        ix = self.mesh.xy.cvert_ix
+        _IORsq = IORsq[ix]
+
+        if which == 'x':
+            R1,R2,R3 = self.xgrid_cor_facs
+            r = self.mesh.xy.rxa[ix]
+            dla = self.mesh.xy.dxa[ix]
+            a,b,c = self.a0x_,self.b0x_,self.c0x_
+            mask = self.xgrid_cor_mask
+        else:
+            R1,R2,R3 = self.ygrid_cor_facs
+            r = self.mesh.xy.rya[ix]
+            dla = self.mesh.xy.dya[ix]
+            a,b,c = self.a0y_,self.b0y_,self.c0y_
+            mask = self.ygrid_cor_mask
+        
+        a_,b_,c_ = out
+
+        s = self.sig
+
+        eval1 = "a + 0.25*r3*n1"
+        eval2 = "b + 0.25*r2*n2"
+        eval3 = "c + 0.25*r1*n3"
+        eval1_alt = "a + n1/48."
+        eval2_alt = "b + 5./24.*n2"
+        eval3_alt = "c + n3/48."
+
+        _dict = {"a":a,"b":b,"c":c,"n1":_IORsq[:-1],"n2":_IORsq,"n3":_IORsq[1:],"r1":R1[:-1,None],"r2":R2[:,None],"r3":R3[1:,None]}
+
+        a_[ix][1:] = np.where(
+            mask[1:,None],
+            ne.evaluate(eval1_alt,local_dict=_dict),
+            ne.evaluate(eval1,local_dict=_dict)
+        )
+
+        b_[ix] = np.where(
+            mask[:,None],
+            ne.evaluate(eval2_alt,local_dict=_dict),
+            ne.evaluate(eval2,local_dict=_dict)
+        )
+
+        c_[ix][:-1] = np.where(
+            mask[:-1,None],
+            ne.evaluate(eval3_alt,local_dict=_dict),
+            ne.evaluate(eval3,local_dict=_dict)
+        )
+
+        a_[ix][0] = s*R3[0] + 1. / ((r[0]+1) * dla[0]*dla[0]) + 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
+        c_[ix][-1] = s*R1[-1] + 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) + 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
+
+    def pmlcorrect_(self,trimats_,which='x'):
+
+        ix = self.mesh.xy.pvert_ix
+        a_,b_,c_ = trimats_
+        
+        if which=='x':
+            a_[ix] = self.apmlx_[:,None]
+            b_[ix] = self.bpmlx_[:,None]
+            c_[ix] = self.cpmlx_[:,None]
+        else:
+            a_[ix] = self.apmly_[:,None]
+            b_[ix] = self.bpmly_[:,None]
+            c_[ix] = self.cpmly_[:,None]
+
+    def rmat2(self,trimats_,_rmat,u,which='x'):
+
+        a,b,c = trimats_
+
+        _dict = _dict = {"a":a[1:-1],"b":b[1:-1],"c":c[1:-1],"u1":u[:-2],"u2":u[1:-1],"u3":u[2:] }
+        _eval = "a*u1 + b*u2 + c*u3"
+
+        ne.evaluate(_eval,local_dict=_dict,out=_rmat[1:-1])
+
+        _rmat[0] = b[0]*u[0] + c[0]*u[1]
+        _rmat[-1] = a[-1]*u[-2] + b[-1]*u[-1]
+
     def rmat(self,_rmat,u,IORsq,which='x'):
         ix = self.mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
@@ -315,8 +543,8 @@ class Prop3D:
             a,b,c = self.a0y_,self.b0y_,self.c0y_
 
         N = self.n02*self.k02
-    
         m = np.s_[1:-1,None]
+
         _dict = _dict = {"a":a,"b":b,"c":c,"u1":u[ix][:-2],"u2":u[ix][1:-1],"u3":u[ix][2:],"n1":_IORsq[:-2],"n2":_IORsq[1:-1],"n3":_IORsq[2:],"r3":R3[m],"r2":R2[m],"r1":R1[m] }
         _eval = "(a+0.25*r3*n1)*u1 + (b+0.25*r2*n2)*u2 + (c+0.25*r1*n3)*u3"
 
@@ -324,7 +552,42 @@ class Prop3D:
 
         _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
-        
+    
+    def rmat_dask(self,_rmat,u,IORsq,which='x'):
+        ix = self.mesh.xy.cvert_ix
+        _IORsq = IORsq[ix]
+        s = self.sig
+
+        if which == 'x':    
+            R1,R2,R3 = self.xgrid_cor_facs
+            dla = self.mesh.xy.dxa[ix]
+            r = self.mesh.xy.rxa[ix]
+            a,b,c = self.a0x_,self.b0x_,self.c0x_
+        else:
+            R1,R2,R3 = self.ygrid_cor_facs
+            dla = self.mesh.xy.dya[ix]
+            r = self.mesh.xy.rya[ix]
+            a,b,c = self.a0y_,self.b0y_,self.c0y_
+
+        N = self.n02*self.k02
+        m = np.s_[1:-1,None]
+
+        ad = da.from_array(a)
+        bd = da.from_array(b)
+        cd = da.from_array(c)
+        ud = da.from_array(u[ix])
+        Id = da.from_array(_IORsq)
+        r3d = da.from_array(R3[m])
+        r2d = da.from_array(R2[m])
+        r1d = da.from_array(R1[m])
+
+        out = (ad+0.25*r3d*Id[:-2])*ud[:-2] + (bd+0.25*r2d*Id[1:-1])*ud[1:-1] + (cd+0.25*r1d*Id[2:])*ud[2:]
+        out.persist()
+        _rmat[ix][1:-1] = out.compute()
+
+        _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
+        _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
+
     def rmat_precomp(self,which='x'):
         ix = self.mesh.xy.cvert_ix
         s = self.sig
@@ -333,7 +596,7 @@ class Prop3D:
 
         eval1="(s*r3+1/(r+1)/(d*d)+0.25*r3*n)"
         eval2="(s*r2-1/r/(d*d)+0.25*r2*n)"
-        eval3="(s*r1 + 1/r/(r+1)/(d*d) + 0.25*r1*n)"
+        eval3="(s*r1+1/r/(r+1)/(d*d) + 0.25*r1*n)"
 
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
@@ -427,22 +690,29 @@ class Prop3D:
         self.update_grid_cor_facs('y')
 
         # initial array allocation
-        _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+        _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
 
-        self._trimats_precomp('x')
-        self._trimats_precomp('y')
+        self.precomp_trimats('x')
+        self.precomp_trimats('y')
 
         self.rmat_precomp('x')
         self.rmat_precomp('y')
+        #self.precomptrimats_('x')
+        #self.precomptrimats_('y')
         
         self._pmlcorrect(_trimatsx,'x')
         self._pmlcorrect(_trimatsy,'y')
+
+        self.pmlcorrect_(trimatsx_,'x')
+        self.pmlcorrect_(trimatsy_,'y')
 
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
 
         print("initial shape: ",xy.shape)
         for i in range(total_iters):
+            
+    
             printProgressBar(i,total_iters)
             u0 = xy.get_base_field(u)
             u0c = np.conj(u0)
@@ -468,8 +738,7 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
-                #xy.plot_mesh(4)
-                
+                print(xy.shape)
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
@@ -483,6 +752,8 @@ class Prop3D:
                 new_xw = mesh.xwfunc(__z)
                 new_yw = mesh.ywfunc(__z)
                 expanded = xy.expand(new_xw,new_yw)
+                #print(xy.xa0)
+                #print(xy.dxa)
 
                 if expanded:
                     #now we need to pad u,u0 with zeros to make sure it matches the new space
@@ -493,24 +764,33 @@ class Prop3D:
 
                 #subdivide the nuniform grid
                 xy.refine_base_alt(u0,ucrit)
- 
+
+                #interp the field to the new grid   
                 u = xy.resample_complex(u)
 
+                #plt.imshow(np.abs(u0),extent=(xy.xm,xy.xM,xy.ym,xy.yM))
+                #xy.plot_mesh(16)
+                #plt.show()
+
+                #give the grid to the optical sys obj so it can compute IORs
                 self.optical_system.set_sampling(xy)
 
+                #compute nonuniform grid correction factors R_i
                 self.update_grid_cor_facs('x')
                 self.update_grid_cor_facs('y')
 
                 # grid size has changed, so now we need to reallocate arrays for at least the next remesh_period iters
-                _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+                _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
 
                 #get the current IOR dist
-
                 self.set_IORsq(IORsq__,z__)
                 
                 #precompute things that will be reused
-                self._trimats_precomp('x')
-                self._trimats_precomp('y')
+                self.precomp_trimats('x')
+                self.precomp_trimats('y')
+
+                #self.precomptrimats_('x')
+                #self.precomptrimats_('y')
 
                 self.rmat_precomp('x')
                 self.rmat_precomp('y')
@@ -518,19 +798,28 @@ class Prop3D:
                 self._pmlcorrect(_trimatsx,'x')
                 self._pmlcorrect(_trimatsy,'y')
 
+                self.pmlcorrect_(trimatsx_,'x')
+                self.pmlcorrect_(trimatsy_,'y')
+
             self.set_IORsq(_IORsq_,_z_,)
             self.set_IORsq(__IORsq,__z)
 
             self.rmat(rmatx,u,IORsq__,'x')
             self.rmat_pmlcorrect(rmatx,u,'x')
 
+            #self.trimatsm_(trimatsx_,IORsq__,'x')
+            #self.trimatsm_(trimatsy_,_IORsq_.T,'y')
+
             self._trimats(_trimatsx,_IORsq_,'x')
             self._trimats(_trimatsy,__IORsq.T,'y')
+
+            #self.rmat2(trimatsx_,rmatx,u)
 
             tri_solve_vec(_trimatsx[0],_trimatsx[1],_trimatsx[2],rmatx,gx,u)
 
             self.rmat(rmaty,u.T,_IORsq_.T,'y')
             self.rmat_pmlcorrect(rmaty,u.T,'y')
+            #self.rmat2(trimatsy_,rmaty,u.T)
 
             tri_solve_vec(_trimatsy[0],_trimatsy[1],_trimatsy[2],rmaty,gy,u.T)
 

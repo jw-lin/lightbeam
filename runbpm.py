@@ -8,19 +8,21 @@ import LPmodes
 import argparse
 import matplotlib.pyplot as plt
 
-parser = argparse.ArgumentParser("propagate field through system specified in config.py")
+parser = argparse.ArgumentParser("propagate field through system specified in top of runbpm.py")
 parser.add_argument("--wl0",nargs="?",type=float)
 parser.add_argument('--plot2D',action='store_true')
 args = parser.parse_args()
 
-## to do: richardson extrapolation -- im stuck 
-## non-uniform mesh (will work well for Corrigan-style lantern) -- done!
-## remove xg,yg and do everyting in terms of xa,ya -- can only be partially implemented
+## to do ## 
 
-## ANTIALIASING ON A NONUNIFORM MESH?? -- this turned out to be easy
-### TRANSFORM IOR FIRST, THEN COMPUTE OVER UV GRID -- this doesn't work
+# this config file needs to be completely rewritten into a more user-friendly format
+# the slice/subvolume selection for the field data is fucked
 
-## better refinement method ## -- now theres a weight factor for the 2nd derivative
+## current features ##
+# FD-BPM (ADI for 3D, GD method for 4th order transversal accuracy, trapezoidal rule for 2nd order longitudinal accuracy)
+# Fast(ish) tridiagonal matrix solver
+# An adaptive grid that can grow with tapered waveguides
+# Smoothing (antialiasing) of IOR distribution for better convergence
 
 
 ################################
@@ -46,7 +48,7 @@ lant = optics.lant5big(rcore,rclad,rjack,ncore,nclad,njack,offset,zex,final_scal
 
 #######################################
 ## set optical item being simulated) ##
-optic = lant
+optic = optics.OpticSys([],njack) #lant#
 
 ########################################
 ## set the free space wavelength (um) ##
@@ -54,7 +56,7 @@ wl0 = 1.55 if args.wl0 is None else args.wl0
 
 #########################
 ## number of PML cells ##
-PML = 4
+PML = 12
 
 ###################################
 ## sampling grid parameters (um) ##
@@ -62,12 +64,12 @@ xw = 440
 yw = 440
 zw = 13800
 ds = 2
-dz = 2
+dz = 10
 
 #################################################
 ## set how transversal size of mesh grows w/ z ##
 
-xw_func = lambda z: (440 - 120) * z/zex + 120
+xw_func = lambda z: 440 #(440 - 120) * z/zex + 120
 yw_func = xw_func
 
 mesh = RectMesh3D(xw,yw,zw,ds,dz,PML,xw_func,yw_func)
@@ -75,7 +77,7 @@ xg,yg = mesh.xy.xg,mesh.xy.yg
 
 ############################
 ## set launch field (req) ##
-u0 = np.load("PSF0hi.npy")
+u0 = np.load("tg_launch_his.npy")# np.load("PSF0hi.npy") #
 
 ########################
 ## truncate the field ##
@@ -95,8 +97,8 @@ dynamic_n0 = False #this computes a power-weighted avergae of the actual IOR, se
 
 #####################
 ## mesh refinement ##
-ucrit = 1.5e-7 # the lower the slower!
-remesh_every = 50 #^^^
+ucrit = 4.e-7 # the lower the slower!
+remesh_every = 10 #^^^
 max_refinement_ratio = 128
 
 mesh.xy.max_ratio = max_refinement_ratio
@@ -107,7 +109,7 @@ mesh.xy.max_iters = 8
 
 # save the entire data-cube or just a slice
 
-savex = [-236,236] #this stuff's kinda broken atm
+savex = [-220-ds*PML,220+2*PML] #this stuff's kinda broken atm
 savey = [0]
 savez = [0,13800]
 
@@ -120,7 +122,6 @@ writeto = None #also broken
 ###########################
 
 if __name__ == "__main__":
-
     xslice = getslices(savex,mesh.xa)
     yslice = getslices(savey,mesh.ya)
     zslice = getslices(savez,mesh.za)

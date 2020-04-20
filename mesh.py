@@ -7,12 +7,20 @@ from bisect import bisect_left
 import numexpr as ne
 import math
 
+## to do
+
+# figure out how to normalize ucrit
+# combine the different remeshing options into a single func with a switch argument
+# remeshing process is a little inefficient. not sure how to speed up though
+# remove the unused functions
+# jit this?
+
 TOL=1e-12
 
 class RectMesh2D:
     ''' transverse adapative mesh class '''
 
-    def __init__(self,xw,yw,dx,dy,Nbc=4,u0=None,ucrit=None):
+    def __init__(self,xw,yw,dx,dy,Nbc=4):
 
         self.Nbc = Nbc
         self.shape0_comp = (int(round(xw/dx)+1),int(round(yw/dy)+1))
@@ -35,17 +43,14 @@ class RectMesh2D:
         self.xa = None
         self.ya = None
 
-        #self.xa0_comp = np.linspace(-xw/2,xw/2,self.shape0_comp[0])
-        #self.ya0_comp = np.linspace(-yw/2,yw/2,self.shape0_comp[1])
+        self.ccel_ix = np.s_[Nbc+2:-Nbc-2]
 
-        self.ccel_ix = np.s_[Nbc+1:-Nbc-1]
-
-        #self.xres0,self.yres0 = xres,yres
         self.dx0,self.dy0 = dx,dy
 
         self.max_ratio = 64
 
-        self.cvert_ix = np.s_[Nbc+1:-Nbc]
+        ###???
+        self.cvert_ix = np.s_[Nbc:-Nbc]
         self.pvert_ix = np.hstack((arange(Nbc+1),arange(-Nbc-1,0)))
 
         self.pvert_xa = self.xa0[self.pvert_ix]
@@ -57,9 +62,7 @@ class RectMesh2D:
 
         self.max_iters = 8
 
-        #if u0 is not None:
-        #    self.refine_base(u0,ucrit)
-    
+
     def dxa2xa(self,dxa):
         N = len(dxa)
         out = np.zeros(N+1)
@@ -134,18 +137,6 @@ class RectMesh2D:
 
         #self.weights = (xhg[1:]-xhg[:-1]) * (yhg[:,1:]-yhg[:,:-1])
         self.weights = self.get_weights()
-        
-        #ix = self.cvert_ix
-
-        #get views of computational region of arrs
-        '''
-        self.cxa = self.xa[ix]
-        self.cya = self.ya[ix]
-        self.cdxa = self.dxa[ix]
-        self.cdya = self.dya[ix]
-        self.crxa = self.rxa[ix]
-        self.crya = self.rya[ix]
-        '''
 
         self.shape = (len(new_xa),len(new_ya))
     
@@ -218,20 +209,8 @@ class RectMesh2D:
 
         #self.weights = (xhg[1:]-xhg[:-1]) * (yhg[:,1:]-yhg[:,:-1])
         self.weights = self.get_weights()
-        
-        #ix = self.cvert_ix
-
-        #get views of computational region of arrs
-        '''
-        self.cxa = self.xa[ix]
-        self.cya = self.ya[ix]
-        self.cdxa = self.dxa[ix]
-        self.cdya = self.dya[ix]
-        self.crxa = self.rxa[ix]
-        self.crya = self.rya[ix]
-        '''
-
         self.shape = (len(new_xa),len(new_ya))
+
     def get_weights(self):
         xhg,yhg = self.xhg,self.yhg
         weights = ne.evaluate("(a-b)*(c-d)",local_dict={"a":xhg[1:],"b":xhg[:-1],"c":yhg[:,1:],"d":yhg[:,:-1]})
@@ -253,12 +232,6 @@ class RectMesh2D:
 
     def refine_base(self,u0,ucrit,maxr=None):
         '''split the mesh until a max of du is stored in each cell'''
-
-        #umid = ne.evaluate("0.25*(u1+u2+u3+u4)",local_dict={"u1":u0[1:,1:],"u2":u0[:-1,1:],"u3":u0[1:,:-1],"u4":u0[:-1,:-1]})
-
-        #umid = 0.25 * (u0[1:,1:]+u0[:-1,1:]+u0[1:,:-1]+u0[:-1,:-1])
-        #umaxx = np.max(umid,axis=1)
-        #umaxy = np.max(umid,axis=0)
 
         if maxr is None:
             maxr = self.max_ratio
@@ -304,8 +277,8 @@ class RectMesh2D:
         mask = (_ry>1)
         rfacya[ix][mask] = 2
 
-        xa_old = np.copy(self.xa)
-        ya_old = np.copy(self.ya)
+        xa_old = self.xa
+        ya_old = self.ya
 
         self.updatecoords3(rfacxa,rfacya)
 
@@ -429,8 +402,8 @@ class RectMesh2D:
         mask = (_ry>1)
         rfacya[ix][mask] = 2
 
-        xa_old = np.copy(self.xa)
-        ya_old = np.copy(self.ya)
+        xa_old = self.xa
+        ya_old = self.ya
 
         self.updatecoords3(rfacxa,rfacya)
 
@@ -492,118 +465,3 @@ class RectMesh3D:
         '''dimensionless, divided by e0 omega'''
         return np.where(np.abs(y)>self.xy.yw/2.,power((np.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
 
-'''
-plt.style.use('dark_background')
-u0 = np.load("PSF0lo.npy")
-u0/=np.max(np.abs(u0))
-xdif2 = np.empty_like(u0,dtype=np.complex128)
-xdif2[1:-1] = u0[2:]+u0[:-2] - 2 * u0[1:-1]
-
-xdif2[0] = xdif2[-1] = 0
-
-ydif2 = np.empty_like(u0,dtype=np.complex128)
-ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2 * u0[:,1:-1]
-
-ydif2[:,0] = ydif2[:,-1] = 0
-
-#plt.imshow(np.abs(u0))
-#plt.show()
-_xdif2 = np.abs(xdif2)
-_xdif2 /= np.max(_xdif2)
-
-#plt.imshow(np.abs(u0))
-#plt.show()
-
-#plt.imshow(_xdif2)
-#plt.show()
-
-
-#plt.imshow(np.abs(ydif2))
-#plt.show()
-import cv2
-from misc import resize
-u0 = resize(u0,(237,237))
-
-c = 2e-4
-
-xy = RectMesh2D(440,440,2,2,8)
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(8)
-
-u0 = xy.refine_by_two_dif(u0,c)
-print(xy.shape)
-#plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh()
-
-print(xy.shape)
-
-'''
-'''
-c = 0.0012
-
-u0 = np.load("PSF0lo.npy")
-
-xy = RectMesh2D(440,440,0.5,0.5,8)
-
-plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(16)
-
-xy.refine_base2(np.abs(u0),c)
-plt.imshow(np.abs(u0),extent=(-224,224,-224,224))
-xy.plot_mesh(16)
-
-print(xy.shape)
-
-xy.reset()
-xy.plot_mesh(16)
-
-print(xy.shape)
-'''
-'''
-print(xy.shape)
-
-avgu = np.mean(u0)
-
-du = avgu * xy.dx0*xy.dy0 * 4
-
-
-xy.refine_base(u0,0.005)
-
-print(xy.shape)
-
-plt.imshow(u0,origin="lower",extent=(-224,224,-224,224))
-xy.plot_mesh(reduce_by=8)
-plt.show()
-'''
