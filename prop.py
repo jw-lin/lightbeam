@@ -18,21 +18,19 @@ plt.style.use('dark_background')
 ### to do ###
 
 ## convergence plots
-# for both this and rsoft!
+# for both this and rsoft! so i can compare!
 
 ## performance
 
-# full size mesh giving different results than expanding mesh? - fixed i believe, 
-# _trimatsm gives different results than _trimats?
 # maybe adaptive z stepping
 # get a better refinement criterion -- now weighting partially by 2nd deriv. still could use some work
-# compute r = 1 and r=/=1 points separately? -- IN PROGRESS -- WHY IS THIS SLOWER
+# compute r = 1 and r=/=1 points separately? -- I TRIED IT -- WHY IS THIS SLOWER
 
-# more efficient ways to store arrays with many repeated values 
+# more efficient ways to store arrays with many repeated values -- some sort of sparse-like data structure?
 
 # optimize tri_solve_vec : maybe try out dask (parallelize) -- WHY IS THIS ALSO SLOWER AHHHH
 
-#ignore shifting of IOR arrays in trimats calc?
+#ignore shifting of IOR arrays in trimats calc? 
 
 ## readability
 
@@ -138,24 +136,6 @@ class Prop3D:
         self.b0y_ = None
         self.c0y_ = None
 
-        '''        
-        self._apmlx = - 0.5/dx02*Tdox 
-        self._bpmlx = sig + Rx/dx02 - 0.25 * K
-        self._cpmlx = - 0.5/dx02*Tupx
-
-        self.apmlx_ = 0.5/dx02*Tdox
-        self.bpmlx_ = sig - Rx/dx02 + 0.25 * K
-        self.cpmlx_ = 0.5/dx02*Tupx
-
-        self._apmly = - 0.5/dy02*Tdoy
-        self._bpmly = sig + Ry/dy02 - 0.25 * K
-        self._cpmly = - 0.5/dy02*Tupy
-
-        self.apmly_ = 0.5/dy02*Tdoy
-        self.bpmly_ = sig - Ry/dy02 + 0.25 * K
-        self.cpmly_ = 0.5/dy02*Tupy
-        '''
-
         ## same as above but in PML zone
         
         self._apmlx = sig/12. - 0.5/dx02*Tdox - K/48.
@@ -174,7 +154,6 @@ class Prop3D:
         self.bpmly_ = 5./6.*sig - Ry/dy02 + 5./24. * K
         self.cpmly_ = sig/12. + 0.5/dy02*Tupy + K/48.
         
-
         self.half_dz = mesh.dz/2.
 
         self.power = np.empty((mesh.zres,))
@@ -186,8 +165,8 @@ class Prop3D:
         _trimatsx = (genc(sx),genc(sx),genc(sx))
         _trimatsy = (genc(sy),genc(sy),genc(sy))
 
-        trimatsx_ = (genc(sx),genc(sx),genc(sx))
-        trimatsy_ = (genc(sy),genc(sy),genc(sy))
+        #trimatsx_ = (genc(sx),genc(sx),genc(sx))
+        #trimatsy_ = (genc(sy),genc(sy),genc(sy))
 
         rmatx,rmaty = genc(sx),genc(sy)
         gx = genc(sx)
@@ -199,18 +178,22 @@ class Prop3D:
         _IORsq_ = np.full(sx,fill,dtype=f64)
         __IORsq = np.full(sx,fill,dtype=f64)
 
-        return _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq
+        #return _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq
+        return _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq
 
     def check_z_inv(self):
         return self.optical_system.z_invariant
 
     def set_IORsq(self,out,z,xg=None,yg=None):
+        #premultiply by k02 so we don't have to keep doing it later
         self.optical_system.set_IORsq(out,z,xg,yg,coeff=self.k02)
 
     def calculate_PML_mats(self):
-        '''As per textbook, calculate the matrices R, T_j+1, and T_j-1 in the PML zone. We assume that the 
-        the PML's refractive index will be constant, equal to the background index. Thus n_pml^2 is a constant.
+        '''As per textbook <Beam Propagation Method for Design of Optical Waveguide Devices> , 
+        calculate the matrices R, T_j+1, and T_j-1 in the PML zone. We assume that the 
+        the PML's refractive index will be constant, equal to the background index.
         '''
+
         m = self.mesh
         xy = m.xy
 
@@ -248,19 +231,17 @@ class Prop3D:
         ix = xy.cvert_ix
         if which=='x':
             r = xy.rxa[ix]
-            self.xgrid_cor_mask = np.where(r[1:-1]==1)[0]
             self.xgrid_cor_imask = np.where(r[1:-1]!=1)[0]
         else:
             r = xy.rya[ix]
-            self.ygrid_cor_mask = np.where(r[1:-1]==1)[0]
             self.ygrid_cor_imask = np.where(r[1:-1]!=1)[0]
         r2 = r*r
-        
-        ## alternative values from paper
 
         R1 = (r2 + r -1)/(6*r*(r+1))
         R2 =  (r2 + 3*r + 1)/(6*r)
         R3 = (-r2 + r + 1)/(6*(r+1))
+
+        ## alternative values from paper
 
         #R1 = (3*r2 - 3*r + 1)/ (6*r*(r+1))
         #R2 = (-r2 + 7*r - 1)/(6*r)
@@ -323,7 +304,6 @@ class Prop3D:
             self.b0y_ = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
             self.c0y_ = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
 
-
     def _trimatsm(self,out,IORsq,which='x'):
         ix = self.mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
@@ -360,8 +340,7 @@ class Prop3D:
         _b[ix][1:-1][r1iix] = ne.evaluate(eval2,local_dict={"b":b[1:-1][r1iix],"r2":R2[1:-1,None][r1iix],"n2":_IORsq[1:-1][r1iix] })
         _c[ix][1:-1][r1iix] = ne.evaluate(eval3,local_dict={"c":c[1:][r1iix],"r1":R1[1:-1,None][r1iix],"n3":_IORsq[2:][r1iix] })
 
-        #do I need this correction?
-
+        #do I need this correction? answer: seems like it
   
         _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
         _b[ix][0] = s*R2[0] + 1. / (r[0] * dla[0]*dla[0]) - 0.25*R2[0]*(_IORsq[0]-self.n02*self.k02)
@@ -557,6 +536,8 @@ class Prop3D:
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
     
     def rmat_dask(self,_rmat,u,IORsq,which='x'):
+        # i think im just bad at dask. this is way slower than the normal version.
+
         ix = self.mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
         s = self.sig
@@ -688,13 +669,14 @@ class Prop3D:
 
         z__ = 0
 
-        #step0 setup
+        #step 0 setup
 
         self.update_grid_cor_facs('x')
         self.update_grid_cor_facs('y')
 
         # initial array allocation
-        _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+        #_trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+        _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
 
         self.precomp_trimats('x')
         self.precomp_trimats('y')
@@ -707,8 +689,8 @@ class Prop3D:
         self._pmlcorrect(_trimatsx,'x')
         self._pmlcorrect(_trimatsy,'y')
 
-        self.pmlcorrect_(trimatsx_,'x')
-        self.pmlcorrect_(trimatsy_,'y')
+        #self.pmlcorrect_(trimatsx_,'x')
+        #self.pmlcorrect_(trimatsy_,'y')
 
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
@@ -741,22 +723,20 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
-                #print(xy.shape)
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
                     base = xy.get_base_field(IORsq__)
                     self.n02 = xy.dx0*xy.dy0*np.real(np.sum(u0c*u0*base))/self.k02
 
-                #reset the grid
-                #xy.reset()
-                #print("shape",xy.shape)
+                oldxm,oldxM = xy.xm,xy.xM
+                oldym,oldyM = xy.ym,xy.yM
 
                 #expand the grid if necessary
                 new_xw = mesh.xwfunc(__z)
                 new_yw = mesh.ywfunc(__z)
 
-                xy.reinit(new_xw,new_yw)
+                xy.reinit(new_xw,new_yw) #set grid back to base res with new dims
 
                 expanded = (xy.xw != new_xw or xy.yw != new_yw)
                 #expanded = xy.expand(new_xw,new_yw)
@@ -770,10 +750,14 @@ class Prop3D:
                     u0 = np.pad(u0,((xpad,xpad),(ypad,ypad)))
 
                     #pad coord arrays to do interpolation
-                    xy.xa_last = np.hstack( (np.linspace(-new_xw/2-PML*dx,-xy.xw/2-dx-PML*dx,xpad),xy.xa_last,np.linspace(xy.xw/2+PML*dx+dx,new_xw/2+PML*dx,xpad) ) )
-                    xy.ya_last = np.hstack( (np.linspace(-new_yw/2-PML*dy,-xy.yw/2-dy-PML*dy,ypad),xy.ya_last,np.linspace(xy.yw/2+PML*dy+dy,new_yw/2+PML*dy,ypad) ) )
+                    xy.xa_last = np.hstack( ( np.linspace(xy.xm,oldxm-dx,xpad) , xy.xa_last , np.linspace(oldxM + dx, xy.xM,xpad) ) )
+                    xy.ya_last = np.hstack( ( np.linspace(xy.ym,oldym-dy,ypad) , xy.ya_last , np.linspace(oldyM + dy, xy.yM,ypad) ) )
+                    #print(xy.xa_last[0:10])
+                    #print(xy.ya_last[-10:])
+                    #xy.xa_last = np.hstack( (np.linspace(-new_xw/2-PML*dx,-xy.xw/2-dx-PML*dx,xpad),xy.xa_last,np.linspace(xy.xw/2+PML*dx+dx,new_xw/2+PML*dx,xpad) ) )
+                    #xy.ya_last = np.hstack( (np.linspace(-new_yw/2-PML*dy,-xy.yw/2-dy-PML*dy,ypad),xy.ya_last,np.linspace(xy.yw/2+PML*dy+dy,new_yw/2+PML*dy,ypad) ) )
   
-                #subdivide the nonuniform grid
+                #subdivide into nonuniform grid
                 xy.refine_base(u0,ucrit)
 
                 #interp the field to the new grid   
@@ -787,7 +771,7 @@ class Prop3D:
                 self.update_grid_cor_facs('y')
 
                 # grid size has changed, so now we need to reallocate arrays for at least the next remesh_period iters
-                _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+                _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
 
                 #get the current IOR dist
                 self.set_IORsq(IORsq__,z__)
@@ -805,8 +789,8 @@ class Prop3D:
                 self._pmlcorrect(_trimatsx,'x')
                 self._pmlcorrect(_trimatsy,'y')
 
-                self.pmlcorrect_(trimatsx_,'x')
-                self.pmlcorrect_(trimatsy_,'y')
+                #self.pmlcorrect_(trimatsx_,'x')
+                #self.pmlcorrect_(trimatsy_,'y')
 
             self.set_IORsq(_IORsq_,_z_,)
             self.set_IORsq(__IORsq,__z)

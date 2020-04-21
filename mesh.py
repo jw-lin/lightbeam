@@ -11,9 +11,7 @@ import math
 
 # figure out how to normalize ucrit
 # combine the different remeshing options into a single func with a switch argument
-# remeshing process is a little inefficient. not sure how to speed up though
-# remove the unused functions
-# jit this?
+# remeshing process is a little inefficient. not sure how to speed up though. 
 
 TOL=1e-12
 
@@ -31,7 +29,7 @@ class RectMesh2D:
 
         self.ccel_ix = np.s_[Nbc+2:-Nbc-2]
 
-        ###???
+        ###??? idk why these have to overlap but the pml doesn't work any other way
         self.cvert_ix = np.s_[Nbc:-Nbc]
         self.pvert_ix = np.hstack((arange(Nbc+1),arange(-Nbc-1,0)))
 
@@ -153,7 +151,6 @@ class RectMesh2D:
 
         self.xhg,self.yhg = xhg,yhg
 
-        self.weights = self.get_weights()
         self.shape = (len(new_xa),len(new_ya))
 
     def get_weights(self):
@@ -194,6 +191,8 @@ class RectMesh2D:
         return u[self.xix_base].T[self.yix_base].T
 
     def refine_by_two(self,u0,crit_val):
+        ''' uses a hybrid approach where cells tagged are based on the product of field amplitude
+            and second derivative amplitude '''
 
         ix = self.ccel_ix
 

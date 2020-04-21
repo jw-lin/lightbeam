@@ -12,7 +12,8 @@ from mesh import RectMesh2D
 #           -but the boundary region between inner and outer bbox could also be split into four contiguous blocks
 #       -extension to primitives with elliptical cross sections
 #           -I don't think this is that hard. An ellipse is a stretched circle. So antialiasing the ellipse on a rectangular grid is the same
-#            as antialiasing a circle on another (stretched) rectangular grid.
+#            as antialiasing a circle on another differently stretched rectangular grid.
+#           -but as of now, this is unnecessary
 
 class OpticPrim:
     '''base class for optical primitives (simple 3D shapes with a single IOR value)'''
@@ -189,7 +190,7 @@ class lant5(OpticSys):
         super().__init__(elmnts,nb)
 
 class lant5big(OpticSys):
-    '''corrigan et al. 2018 style photonic lantern except the jacket is fkin huge'''
+    '''corrigan et al. 2018 style photonic lantern except the jacket is fkin huge (as in infinite)'''
     def __init__(self,rcore,rclad,rjack,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core1 = scaled_cyl([offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)

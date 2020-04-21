@@ -24,7 +24,6 @@ def _arc(x, y0, y1, r):
     is traversed clockwise then the area is negative, otherwise it is
     positive.
     """
-    #return 0.5 * r**2 * (np.arctan(y1/x) - np.arctan(y0/x))
     return 0.5 * r**2 * (np.arctan2(y1,x) - np.arctan2(y0,x))
 
 def _chord(x, y0, y1):
@@ -169,7 +168,6 @@ def pixwt(xc, yc, r, x, y):
     return _intarea(xc, yc, r, x-0.5, x+0.5, y-0.5, y+0.5)
 
 def get_masks(rsqh,R2):
-    #maskh = np.full_like(rsqh,False,dtype = bool)
     maskh = np.full(rsqh.shape,False)
     maskh[rsqh<=R2] = True
 

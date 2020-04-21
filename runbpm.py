@@ -41,7 +41,6 @@ if __name__ == "__main__":
 
     w = mesh.xy.get_weights()
 
-    ######################################################################
     ## final field power decomposition (add more to modes as necessary) ##
 
     mode0 = norm_nonu(LPmodes.lpfield(xg,yg,0,1,6.5/2,wl0,ncore,nclad),w)
