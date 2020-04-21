@@ -77,9 +77,6 @@ class OpticPrim:
             self.mask_saved = mask
         
         out[bbox][mask] = self.n2*coeff
-
-    def get_guided_mode(self,xg,yg,wl0):
-        pass
     
     def get_boundary(self,z):
         ''' given z, get mask which will select pixels that lie on top of the primitive boundary

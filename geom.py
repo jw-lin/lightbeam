@@ -24,7 +24,8 @@ def _arc(x, y0, y1, r):
     is traversed clockwise then the area is negative, otherwise it is
     positive.
     """
-    return 0.5 * r**2 * (np.arctan(y1/x) - np.arctan(y0/x))
+    #return 0.5 * r**2 * (np.arctan(y1/x) - np.arctan(y0/x))
+    return 0.5 * r**2 * (np.arctan2(y1,x) - np.arctan2(y0,x))
 
 def _chord(x, y0, y1):
     """

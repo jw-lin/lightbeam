@@ -17,9 +17,12 @@ plt.style.use('dark_background')
 
 ### to do ###
 
+## convergence plots
+# for both this and rsoft!
+
 ## performance
 
-# full size mesh giving different results than expanding mesh?
+# full size mesh giving different results than expanding mesh? - fixed i believe, 
 # _trimatsm gives different results than _trimats?
 # maybe adaptive z stepping
 # get a better refinement criterion -- now weighting partially by 2nd deriv. still could use some work
@@ -62,7 +65,7 @@ def tri_solve_vec_p(a,b,c,r,g,u):
     futures = dask.persist(*lazy_results)
     dask.compute(*futures)
 
-@njit#(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
+@njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
 def tri_solve_vec(a,b,c,r,g,u):
     '''Apply Thomas' method for simultaneously solving a set of tridagonal systems. a, b, c, and r are matrices
     (N rows) where each column corresponds a separate system'''
@@ -359,14 +362,14 @@ class Prop3D:
 
         #do I need this correction?
 
-        if r[0] != 1:
-            _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
-            _b[ix][0] = s*R2[0] + 1. / (r[0] * dla[0]*dla[0]) - 0.25*R2[0]*(_IORsq[0]-self.n02*self.k02)
-            _c[ix][0] = s*R1[0] - 1/r[0]/(r[0]+1)/(dla[0]*dla[0]) - 0.25*R1[0]*(_IORsq[0]-self.n02*self.k02)
-        if r[-1] != 1:
-            _a[ix][-1] = s*R3[-1] - 1. / ((r[-1]+1) * dla[-1]*dla[-1]) - 0.25*R3[-1]*(_IORsq[-1]-self.n02*self.k02)
-            _b[ix][-1] = s*R2[-1] + 1. / (r[-1] * dla[-1]*dla[-1]) - 0.25*R2[-1]*(_IORsq[-1]-self.n02*self.k02)
-            _c[ix][-1] = s*R1[-1] - 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) - 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
+  
+        _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
+        _b[ix][0] = s*R2[0] + 1. / (r[0] * dla[0]*dla[0]) - 0.25*R2[0]*(_IORsq[0]-self.n02*self.k02)
+        _c[ix][0] = s*R1[0] - 1/r[0]/(r[0]+1)/(dla[0]*dla[0]) - 0.25*R1[0]*(_IORsq[0]-self.n02*self.k02)
+
+        _a[ix][-1] = s*R3[-1] - 1. / ((r[-1]+1) * dla[-1]*dla[-1]) - 0.25*R3[-1]*(_IORsq[-1]-self.n02*self.k02)
+        _b[ix][-1] = s*R2[-1] + 1. / (r[-1] * dla[-1]*dla[-1]) - 0.25*R2[-1]*(_IORsq[-1]-self.n02*self.k02)
+        _c[ix][-1] = s*R1[-1] - 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) - 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
 
 
     def _trimats(self,out,IORsq,which='x'):
@@ -657,6 +660,7 @@ class Prop3D:
 
         #pull xy mesh
         xy = mesh.xy
+        dx,dy = xy.dx0,xy.dy0
 
         #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone!)
         u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
@@ -666,7 +670,7 @@ class Prop3D:
 
         #initial mesh refinement
         print("initial remesh")
-        xy.refine_base_alt(u0,ucrit)
+        xy.refine_base(u0,ucrit)
 
         weights = xy.get_weights()
 
@@ -710,8 +714,7 @@ class Prop3D:
         self.set_IORsq(IORsq__,z__)
 
         print("initial shape: ",xy.shape)
-        for i in range(total_iters):
-            
+        for i in range(total_iters):        
     
             printProgressBar(i,total_iters)
             u0 = xy.get_base_field(u)
@@ -738,7 +741,7 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
-                print(xy.shape)
+                #print(xy.shape)
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
@@ -746,31 +749,35 @@ class Prop3D:
                     self.n02 = xy.dx0*xy.dy0*np.real(np.sum(u0c*u0*base))/self.k02
 
                 #reset the grid
-                xy.reset()
+                #xy.reset()
+                #print("shape",xy.shape)
 
                 #expand the grid if necessary
                 new_xw = mesh.xwfunc(__z)
                 new_yw = mesh.ywfunc(__z)
-                expanded = xy.expand(new_xw,new_yw)
-                #print(xy.xa0)
-                #print(xy.dxa)
 
+                xy.reinit(new_xw,new_yw)
+
+                expanded = (xy.xw != new_xw or xy.yw != new_yw)
+                #expanded = xy.expand(new_xw,new_yw)
+   
                 if expanded:
                     #now we need to pad u,u0 with zeros to make sure it matches the new space
                     xpad = int((xy.shape0[0]-u0.shape[0])/2)
                     ypad = int((xy.shape0[1]-u0.shape[1])/2)
+
                     u = np.pad(u,((xpad,xpad),(ypad,ypad)))
                     u0 = np.pad(u0,((xpad,xpad),(ypad,ypad)))
 
-                #subdivide the nuniform grid
-                xy.refine_base_alt(u0,ucrit)
+                    #pad coord arrays to do interpolation
+                    xy.xa_last = np.hstack( (np.linspace(-new_xw/2-PML*dx,-xy.xw/2-dx-PML*dx,xpad),xy.xa_last,np.linspace(xy.xw/2+PML*dx+dx,new_xw/2+PML*dx,xpad) ) )
+                    xy.ya_last = np.hstack( (np.linspace(-new_yw/2-PML*dy,-xy.yw/2-dy-PML*dy,ypad),xy.ya_last,np.linspace(xy.yw/2+PML*dy+dy,new_yw/2+PML*dy,ypad) ) )
+  
+                #subdivide the nonuniform grid
+                xy.refine_base(u0,ucrit)
 
                 #interp the field to the new grid   
                 u = xy.resample_complex(u)
-
-                #plt.imshow(np.abs(u0),extent=(xy.xm,xy.xM,xy.ym,xy.yM))
-                #xy.plot_mesh(16)
-                #plt.show()
 
                 #give the grid to the optical sys obj so it can compute IORs
                 self.optical_system.set_sampling(xy)
@@ -831,6 +838,6 @@ class Prop3D:
         
         if writeto:
             np.save(writeto,self.field)
-        return u0
+        return u
 
 
