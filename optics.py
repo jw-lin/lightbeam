@@ -22,20 +22,12 @@ class OpticPrim:
     
     def __init__(self,n):
 
-        ## these parameters allow you to assign a sampling grid to the primitive
-        ## so that it can automatically compute IOR dists.
-        
-        self.xg = None
-        self.yg = None
-        self.xhg = None
-        self.yhg = None
-        self.ds = None
-
         self.n = n
         self.n2 = n*n
         
         self.mask_saved = None
 
+        # optionally, give prims a mesh to set the samplinig for IOR computations
         self.xymesh = None
     
     def _bbox(self,z):
@@ -49,7 +41,7 @@ class OpticPrim:
     def bbox_idx(self,z):
         '''get index slice corresponding to the primitives bbox, given an xg,yg coord grid'''
         m = self.xymesh
-        xa,ya,xg,yg = m.xa,m.ya,m.xg,m.yg
+        xa,ya = m.xa,m.ya
 
         xmin,xmax,ymin,ymax = self._bbox(z)
         imin = max(bisect_left(xa,xmin)-1,0)

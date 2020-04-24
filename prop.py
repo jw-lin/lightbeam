@@ -9,8 +9,6 @@ import numexpr as ne
 from mesh import RectMesh3D,RectMesh2D
 import optics
 from misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu,resize
-import dask
-import dask.array as da
 
 import matplotlib.pyplot as plt
 plt.style.use('dark_background')
@@ -39,29 +37,11 @@ plt.style.use('dark_background')
 # remove unused functions
 # move all the eval strings somewhere else (together)
 
-ncore = 1.45397
-nclad = 1.444
-njack = 1.4431
-
-v0 = njack*njack
-v1 = nclad*nclad
-v2 = ncore*ncore
-
 def genc(shape):
     return np.empty(shape,dtype=c128,order='F')
 
 def genf(shape):
     return np.empty(shape,dtype=c128,order='F')
-
-
-def tri_solve_vec_p(a,b,c,r,g,u):
-    lazy_results = []
-    for i in range(a.shape[1]):
-        lazy_result = dask.delayed(tri_solve_vec)(a[:,i],b[:,i],c[:,i],r[:,i],g[:,i],u[:,i])
-        lazy_results.append(lazy_result)
-
-    futures = dask.persist(*lazy_results)
-    dask.compute(*futures)
 
 @njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
 def tri_solve_vec(a,b,c,r,g,u):
@@ -165,9 +145,6 @@ class Prop3D:
         _trimatsx = (genc(sx),genc(sx),genc(sx))
         _trimatsy = (genc(sy),genc(sy),genc(sy))
 
-        #trimatsx_ = (genc(sx),genc(sx),genc(sx))
-        #trimatsy_ = (genc(sy),genc(sy),genc(sy))
-
         rmatx,rmaty = genc(sx),genc(sy)
         gx = genc(sx)
         gy = genc(sy)
@@ -178,7 +155,6 @@ class Prop3D:
         _IORsq_ = np.full(sx,fill,dtype=f64)
         __IORsq = np.full(sx,fill,dtype=f64)
 
-        #return _trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq
         return _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq
 
     def check_z_inv(self):
@@ -279,81 +255,10 @@ class Prop3D:
             self._a0y = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
             self._b0y = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
             self._c0y = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
-        
-    def precomptrimats_(self,which='x'):
-        ix = self.mesh.xy.cvert_ix
-        s = self.sig    
-        nu0 = -self.k02*self.n02
-
-        eval1 = "s*r3 + 1/(r+1)/(d*d) + 0.25*r3*n"
-        eval2 = "s*r2 - 1/r/(d*d) + 0.25*r2*n"
-        eval3 = "s*r1 + 1/r/(r+1)/(d*d) + 0.25*r1*n"
-
-        if which == 'x':
-            R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
-            self.a0x_ = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
-            self.b0x_ = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
-            self.c0x_ = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
-        else:
-            R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
-            self.a0y_ = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
-            self.b0y_ = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
-            self.c0y_ = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
-
-    def _trimatsm(self,out,IORsq,which='x'):
-        ix = self.mesh.xy.cvert_ix
-        _IORsq = IORsq[ix]
-
-        if which == 'x':
-            R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
-            a,b,c = self._a0x,self._b0x,self._c0x
-            r1iix = self.xgrid_cor_imask
-        else:
-            R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
-            a,b,c = self._a0y,self._b0y,self._c0y
-            r1iix = self.ygrid_cor_imask
-        
-        _a,_b,_c = out
-
-        s = self.sig
-
-        eval1 = "a - 0.25*r3*n1"
-        eval2 = "b - 0.25*r2*n2"
-        eval3 = "c - 0.25*r1*n3"
-        eval1_alt = "a - n1/48."
-        eval2_alt = "b - 5./24.*n2"
-        eval3_alt = "c - n3/48."
-
-        ne.evaluate(eval1_alt,local_dict={"a":a,"n1":_IORsq[:-1]},out=_a[ix][1:])
-        ne.evaluate(eval2_alt,local_dict={"b":b,"n2":_IORsq},out=_b[ix])
-        ne.evaluate(eval3_alt,local_dict={"c":c,"n3":_IORsq[1:]},out=_c[ix][:-1])
-
-        _a[ix][1:-1][r1iix] = ne.evaluate(eval1,local_dict={"a":a[:-1][r1iix],"r3":R3[1:-1,None][r1iix],"n1":_IORsq[:-2][r1iix] })
-        _b[ix][1:-1][r1iix] = ne.evaluate(eval2,local_dict={"b":b[1:-1][r1iix],"r2":R2[1:-1,None][r1iix],"n2":_IORsq[1:-1][r1iix] })
-        _c[ix][1:-1][r1iix] = ne.evaluate(eval3,local_dict={"c":c[1:][r1iix],"r1":R1[1:-1,None][r1iix],"n3":_IORsq[2:][r1iix] })
-
-        #do I need this correction? answer: seems like it
-  
-        _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
-        _b[ix][0] = s*R2[0] + 1. / (r[0] * dla[0]*dla[0]) - 0.25*R2[0]*(_IORsq[0]-self.n02*self.k02)
-        _c[ix][0] = s*R1[0] - 1/r[0]/(r[0]+1)/(dla[0]*dla[0]) - 0.25*R1[0]*(_IORsq[0]-self.n02*self.k02)
-
-        _a[ix][-1] = s*R3[-1] - 1. / ((r[-1]+1) * dla[-1]*dla[-1]) - 0.25*R3[-1]*(_IORsq[-1]-self.n02*self.k02)
-        _b[ix][-1] = s*R2[-1] + 1. / (r[-1] * dla[-1]*dla[-1]) - 0.25*R2[-1]*(_IORsq[-1]-self.n02*self.k02)
-        _c[ix][-1] = s*R1[-1] - 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) - 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
-
 
     def _trimats(self,out,IORsq,which='x'):
         ''' calculate the tridiagonal matrices in the computational zone '''
-        ## modified method with douglas scheme
+
         ix = self.mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
 
@@ -402,112 +307,6 @@ class Prop3D:
 
         _rmat[pix] = temp
 
-    def trimats_(self,out,IORsq,which='x'):
-        ix = self.mesh.xy.cvert_ix
-        _IORsq = IORsq[ix]
-
-        if which == 'x':    
-            R1,R2,R3 = self.xgrid_cor_facs
-            dla = self.mesh.xy.dxa[ix]
-            r = self.mesh.xy.rxa[ix]
-            a,b,c = self.a0x_,self.b0x_,self.c0x_
-        else:
-            R1,R2,R3 = self.ygrid_cor_facs
-            dla = self.mesh.xy.dya[ix]
-            r = self.mesh.xy.rya[ix] 
-            a,b,c = self.a0y_,self.b0y_,self.c0y_
-
-        s = self.sig
-
-        eval1 = "(a + 0.25*r3*n)"
-        eval2 = "(b + 0.25*r2*n)"
-        eval3 = "(c + 0.25*r1*n)"
-
-        a_,b_,c_ = out
-        ne.evaluate(eval1,local_dict={"a":a,"r3":R3[1:,None],"n":_IORsq[:-1]},out=a_[ix][1:])
-        ne.evaluate(eval2,local_dict={"b":b,"r2":R2[:,None],"n":_IORsq},out=b_[ix])
-        ne.evaluate(eval3,local_dict={"c":c,"r1":R1[:-1,None],"n":_IORsq[1:]},out=c_[ix][:-1])
-
-        a_[ix][0] = s*R3[0] + 1. / ((r[0]+1) * dla[0]*dla[0]) + 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
-        c_[ix][-1] = s*R1[-1] + 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) + 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
-    
-    def trimatsm_(self,out,IORsq,which='x'):
-        ix = self.mesh.xy.cvert_ix
-        _IORsq = IORsq[ix]
-
-        if which == 'x':
-            R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
-            a,b,c = self.a0x_,self.b0x_,self.c0x_
-            mask = self.xgrid_cor_mask
-        else:
-            R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
-            a,b,c = self.a0y_,self.b0y_,self.c0y_
-            mask = self.ygrid_cor_mask
-        
-        a_,b_,c_ = out
-
-        s = self.sig
-
-        eval1 = "a + 0.25*r3*n1"
-        eval2 = "b + 0.25*r2*n2"
-        eval3 = "c + 0.25*r1*n3"
-        eval1_alt = "a + n1/48."
-        eval2_alt = "b + 5./24.*n2"
-        eval3_alt = "c + n3/48."
-
-        _dict = {"a":a,"b":b,"c":c,"n1":_IORsq[:-1],"n2":_IORsq,"n3":_IORsq[1:],"r1":R1[:-1,None],"r2":R2[:,None],"r3":R3[1:,None]}
-
-        a_[ix][1:] = np.where(
-            mask[1:,None],
-            ne.evaluate(eval1_alt,local_dict=_dict),
-            ne.evaluate(eval1,local_dict=_dict)
-        )
-
-        b_[ix] = np.where(
-            mask[:,None],
-            ne.evaluate(eval2_alt,local_dict=_dict),
-            ne.evaluate(eval2,local_dict=_dict)
-        )
-
-        c_[ix][:-1] = np.where(
-            mask[:-1,None],
-            ne.evaluate(eval3_alt,local_dict=_dict),
-            ne.evaluate(eval3,local_dict=_dict)
-        )
-
-        a_[ix][0] = s*R3[0] + 1. / ((r[0]+1) * dla[0]*dla[0]) + 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
-        c_[ix][-1] = s*R1[-1] + 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) + 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
-
-    def pmlcorrect_(self,trimats_,which='x'):
-
-        ix = self.mesh.xy.pvert_ix
-        a_,b_,c_ = trimats_
-        
-        if which=='x':
-            a_[ix] = self.apmlx_[:,None]
-            b_[ix] = self.bpmlx_[:,None]
-            c_[ix] = self.cpmlx_[:,None]
-        else:
-            a_[ix] = self.apmly_[:,None]
-            b_[ix] = self.bpmly_[:,None]
-            c_[ix] = self.cpmly_[:,None]
-
-    def rmat2(self,trimats_,_rmat,u,which='x'):
-
-        a,b,c = trimats_
-
-        _dict = _dict = {"a":a[1:-1],"b":b[1:-1],"c":c[1:-1],"u1":u[:-2],"u2":u[1:-1],"u3":u[2:] }
-        _eval = "a*u1 + b*u2 + c*u3"
-
-        ne.evaluate(_eval,local_dict=_dict,out=_rmat[1:-1])
-
-        _rmat[0] = b[0]*u[0] + c[0]*u[1]
-        _rmat[-1] = a[-1]*u[-2] + b[-1]*u[-1]
-
     def rmat(self,_rmat,u,IORsq,which='x'):
         ix = self.mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
@@ -531,43 +330,6 @@ class Prop3D:
         _eval = "(a+0.25*r3*n1)*u1 + (b+0.25*r2*n2)*u2 + (c+0.25*r1*n3)*u3"
 
         ne.evaluate(_eval,local_dict=_dict,out=_rmat[ix][1:-1])
-
-        _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
-        _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
-    
-    def rmat_dask(self,_rmat,u,IORsq,which='x'):
-        # i think im just bad at dask. this is way slower than the normal version.
-
-        ix = self.mesh.xy.cvert_ix
-        _IORsq = IORsq[ix]
-        s = self.sig
-
-        if which == 'x':    
-            R1,R2,R3 = self.xgrid_cor_facs
-            dla = self.mesh.xy.dxa[ix]
-            r = self.mesh.xy.rxa[ix]
-            a,b,c = self.a0x_,self.b0x_,self.c0x_
-        else:
-            R1,R2,R3 = self.ygrid_cor_facs
-            dla = self.mesh.xy.dya[ix]
-            r = self.mesh.xy.rya[ix]
-            a,b,c = self.a0y_,self.b0y_,self.c0y_
-
-        N = self.n02*self.k02
-        m = np.s_[1:-1,None]
-
-        ad = da.from_array(a)
-        bd = da.from_array(b)
-        cd = da.from_array(c)
-        ud = da.from_array(u[ix])
-        Id = da.from_array(_IORsq)
-        r3d = da.from_array(R3[m])
-        r2d = da.from_array(R2[m])
-        r1d = da.from_array(R1[m])
-
-        out = (ad+0.25*r3d*Id[:-2])*ud[:-2] + (bd+0.25*r2d*Id[1:-1])*ud[1:-1] + (cd+0.25*r1d*Id[2:])*ud[2:]
-        out.persist()
-        _rmat[ix][1:-1] = out.compute()
 
         _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
@@ -653,6 +415,8 @@ class Prop3D:
         print("initial remesh")
         xy.refine_base(u0,ucrit)
 
+        #xy.plot_mesh(4)
+
         weights = xy.get_weights()
 
         #now resample the field onto the smaller *non-uniform* xy mesh
@@ -675,7 +439,6 @@ class Prop3D:
         self.update_grid_cor_facs('y')
 
         # initial array allocation
-        #_trimatsx,trimatsx_,rmatx,gx,_trimatsy,trimatsy_,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
         _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
 
         self.precomp_trimats('x')
@@ -683,22 +446,16 @@ class Prop3D:
 
         self.rmat_precomp('x')
         self.rmat_precomp('y')
-        #self.precomptrimats_('x')
-        #self.precomptrimats_('y')
-        
+
         self._pmlcorrect(_trimatsx,'x')
         self._pmlcorrect(_trimatsy,'y')
-
-        #self.pmlcorrect_(trimatsx_,'x')
-        #self.pmlcorrect_(trimatsy_,'y')
 
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
 
         print("initial shape: ",xy.shape)
         for i in range(total_iters):        
-    
-            printProgressBar(i,total_iters)
+            printProgressBar(i,total_iters-1)
             u0 = xy.get_base_field(u)
             u0c = np.conj(u0)
             weights = xy.get_weights()
@@ -723,6 +480,7 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
+                #xy.plot_mesh(4)
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
@@ -732,16 +490,17 @@ class Prop3D:
                 oldxm,oldxM = xy.xm,xy.xM
                 oldym,oldyM = xy.ym,xy.yM
 
+                oldxw,oldyw = xy.xw,xy.yw
+
                 #expand the grid if necessary
                 new_xw = mesh.xwfunc(__z)
                 new_yw = mesh.ywfunc(__z)
 
+                new_xw, new_yw = xy.snapto(new_xw,new_yw)
+
                 xy.reinit(new_xw,new_yw) #set grid back to base res with new dims
 
-                expanded = (xy.xw != new_xw or xy.yw != new_yw)
-                #expanded = xy.expand(new_xw,new_yw)
-   
-                if expanded:
+                if (xy.xw > oldxw or xy.yw > oldyw):
                     #now we need to pad u,u0 with zeros to make sure it matches the new space
                     xpad = int((xy.shape0[0]-u0.shape[0])/2)
                     ypad = int((xy.shape0[1]-u0.shape[1])/2)
@@ -752,11 +511,7 @@ class Prop3D:
                     #pad coord arrays to do interpolation
                     xy.xa_last = np.hstack( ( np.linspace(xy.xm,oldxm-dx,xpad) , xy.xa_last , np.linspace(oldxM + dx, xy.xM,xpad) ) )
                     xy.ya_last = np.hstack( ( np.linspace(xy.ym,oldym-dy,ypad) , xy.ya_last , np.linspace(oldyM + dy, xy.yM,ypad) ) )
-                    #print(xy.xa_last[0:10])
-                    #print(xy.ya_last[-10:])
-                    #xy.xa_last = np.hstack( (np.linspace(-new_xw/2-PML*dx,-xy.xw/2-dx-PML*dx,xpad),xy.xa_last,np.linspace(xy.xw/2+PML*dx+dx,new_xw/2+PML*dx,xpad) ) )
-                    #xy.ya_last = np.hstack( (np.linspace(-new_yw/2-PML*dy,-xy.yw/2-dy-PML*dy,ypad),xy.ya_last,np.linspace(xy.yw/2+PML*dy+dy,new_yw/2+PML*dy,ypad) ) )
-  
+                   
                 #subdivide into nonuniform grid
                 xy.refine_base(u0,ucrit)
 
@@ -780,17 +535,11 @@ class Prop3D:
                 self.precomp_trimats('x')
                 self.precomp_trimats('y')
 
-                #self.precomptrimats_('x')
-                #self.precomptrimats_('y')
-
                 self.rmat_precomp('x')
                 self.rmat_precomp('y')
                 
                 self._pmlcorrect(_trimatsx,'x')
                 self._pmlcorrect(_trimatsy,'y')
-
-                #self.pmlcorrect_(trimatsx_,'x')
-                #self.pmlcorrect_(trimatsy_,'y')
 
             self.set_IORsq(_IORsq_,_z_,)
             self.set_IORsq(__IORsq,__z)
@@ -798,19 +547,13 @@ class Prop3D:
             self.rmat(rmatx,u,IORsq__,'x')
             self.rmat_pmlcorrect(rmatx,u,'x')
 
-            #self.trimatsm_(trimatsx_,IORsq__,'x')
-            #self.trimatsm_(trimatsy_,_IORsq_.T,'y')
-
             self._trimats(_trimatsx,_IORsq_,'x')
             self._trimats(_trimatsy,__IORsq.T,'y')
-
-            #self.rmat2(trimatsx_,rmatx,u)
 
             tri_solve_vec(_trimatsx[0],_trimatsx[1],_trimatsx[2],rmatx,gx,u)
 
             self.rmat(rmaty,u.T,_IORsq_.T,'y')
             self.rmat_pmlcorrect(rmaty,u.T,'y')
-            #self.rmat2(trimatsy_,rmaty,u.T)
 
             tri_solve_vec(_trimatsy[0],_trimatsy[1],_trimatsy[2],rmaty,gy,u.T)
 

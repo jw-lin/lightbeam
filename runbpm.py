@@ -11,6 +11,7 @@ from config import *
 
 parser = argparse.ArgumentParser("propagate field through system specified in top of runbpm.py")
 parser.add_argument("--wl0",nargs="?",type=float)
+parser.add_argument("--f",nargs="?",type=str)
 parser.add_argument('--plot2D',action='store_true')
 args = parser.parse_args()
 
@@ -19,11 +20,15 @@ if __name__ == "__main__":
 
     if args.wl0 is not None:
         wl0 = args.wl0
+    
+    if args.f is not None:
+        u0_fname = args.f
 
     mesh = RectMesh3D(xw0,yw0,zw,ds,dz,num_PML,xw_func,yw_func)
     xg,yg = mesh.xy.xg,mesh.xy.yg
 
     u0 =  np.load(u0_fname)
+    #write_rsoft("psf0t",u0,xw0,yw0)
 
     mesh.xy.max_iters = max_remesh_iters
     mesh.sigma_max = sig_max

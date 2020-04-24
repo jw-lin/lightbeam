@@ -2,7 +2,9 @@
 ## free space wavelength (um) ##
 ################################
 
-wl0 = 1.55
+import numpy as np
+wl0s = np.linspace(1,2.5,31)
+#wl0s = [1.45,1.5,1.55,1.6]
 
 ########################################
 ## lantern parameters (assumed 5core) ##
@@ -26,7 +28,7 @@ xw0 = 440
 yw0 = 440
 zw = 13800
 ds = 2
-dz = 1
+dz = 2
 
 ######################################
 ## transverse mesh growth functions ##
@@ -41,7 +43,7 @@ yw_func = xw_func
 
 ucrit = 2.e-7
 remesh_every = 20
-max_remesh_iters = 6
+max_remesh_iters = 8
 
 ##################
 ## PML settings ##
@@ -54,7 +56,7 @@ sig_max = 3. + 0.j
 ## set launch field npy file ##
 ###############################
 
-u0_fname = "PSF0_trunc.npy"
+u0_header = "psf"
 
 #####################
 ## reference index ##

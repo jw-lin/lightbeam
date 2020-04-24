@@ -1,7 +1,8 @@
 import numpy as np
 from numpy import logical_not as NOT, logical_and as AND, logical_or as OR
 from numba import njit
-'''some geometrical stuffs that are useful'''
+
+'''a collection of functions for antialiasing circles'''
 
 ## calculate circle-square overlap.
 

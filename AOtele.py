@@ -21,8 +21,7 @@ class AOtele:
         self.pupil_grid = hc.make_pupil_grid(num_pupil_pixels,diameter = pupil_grid_diam)
         ap = hc.make_obstructed_circular_aperture(diameter,np.sqrt(0.074),4,0.06)
         self.ap = hc.evaluate_supersampled(ap,self.pupil_grid,6)
-        #hc.imshow_field(self.ap)
-        #plt.show()
+
         self.ap2 = hc.evaluate_supersampled(hc.circular_aperture(diameter),self.pupil_grid,6)
 
         act_spacing = diameter / num_DM_acts
@@ -37,7 +36,7 @@ class AOtele:
         self.atmos = None
 
         #self.focal_grid = hc.make_focal_grid(q = 8, num_airy = 20, pupil_diameter=diameter, focal_length=fnum*diameter ,reference_wavelength=wavelength)
-        self.focal_grid = hc.make_focal_grid(q = 32, num_airy = 224/(1.55*fnum), f_number=fnum,reference_wavelength=wavelength)
+        self.focal_grid = hc.make_focal_grid(q = 32, num_airy = 220/(1.55*fnum), f_number=fnum,reference_wavelength=wavelength)
         #self.focal_grid = hc.make_focal_grid(q = 8, num_airy = 20, spatial_resolution=wavelength/diameter)
 
         self.ref_image = None
@@ -106,10 +105,10 @@ class AOtele:
         self.rmat = rmat
         return rmat
 
-    def make_turb(self,fp=0.2,outer_scale_length=20,vel=10):
+    def make_turb(self,fp0=0.2,wl0=500e-9,outer_scale_length=20,vel=10):
         """create a single atmospheric layer according to params (SI units)"""
 
-        Cn2 = hc.Cn_squared_from_fried_parameter(fp,self.wavelength)
+        Cn2 = hc.Cn_squared_from_fried_parameter(fp0,wl0)
         layer = hc.InfiniteAtmosphericLayer(self.pupil_grid,Cn2,outer_scale_length,vel)
 
         self.atmos = layer
@@ -146,9 +145,9 @@ class AOtele:
 
         wf = hc.Wavefront(self.ap,wavelength = self.wavelength)
 
-        wf2 = hc.Wavefront(self.ap2,wavelength = self.wavelength)
-        wf2 = self.propagator.forward(wf2)
-        wf3 = self.propagator.forward(wf)
+        #wf2 = hc.Wavefront(self.ap2,wavelength = self.wavelength)
+        #wf2 = self.propagator.forward(wf2)
+        #wf3 = self.propagator.forward(wf)
 
         #hc.imshow_field(wf2.power/wf2.power.max(),grid=self.focal_grid)
         #plt.show()
@@ -209,9 +208,9 @@ wl = 1.55e-6 #m
 tele = AOtele(4.2,9.5,wl,30)
 tele.calibrate_DM(rcond = 0.01)
 
-#tele.make_turb()
+tele.make_turb()
 
-leak = 1e-2
+leak = 2e-1
 gain = 0.5
 
 '''
@@ -231,36 +230,19 @@ plt.imshow(np.abs(u)/np.abs(u).max(),extent=(-224,224,-224,224),origin = "lower"
 
 plt.show()
 '''
+wls = np.linspace(1,2.5,31)
 
-for i in range(10):
+for i in range(len(wls)):
+    tele.wavelength = wls[0]*1e-6
 
-    #tele.make_turb()
+    wf, strehl, reals, imags = tele.run_closed_loop(leak,gain,1,strehl=True)
+    print(leak,gain,strehl)
 
-    #wf, strehl, reals, imags = tele.run_closed_loop(leak,gain,1,strehl=True)
-    #print(leak,gain,strehl)
+    field = wf.electric_field
 
-    #field = wf.electric_field
+    reals = np.real(field)
+    imags = np.imag(field)
 
-    #hc.imshow_field(wf.power/wf.power.max(),grid=tele.focal_grid)
-    #plt.show()
-
-    #u = reals + 1.j*imags
-    #u = u.reshape((973,973))
-
-    u = np.load("PSF"+str(i)+"30dm.npy")
-
-    p =  np.abs(u*np.conj(u)) 
-    
-    plt.contourf(p/np.max(p), extent = (-224,224,-224,224),levels=[0,0.1,0.5,0.9,1])
-    plt.xlim(xmin=-10,xmax=10)
-    plt.ylim(-10,10)
-    plt.axis('equal')
-    plt.show()
-    
-
-
-    #plt.imshow(np.abs(u))
-    #plt.show()
-
-    #np.save("PSF"+str(i)+"30dm",u)
-
+    u = reals + 1.j*imags
+    u = u.reshape((956,956))
+    np.save("psf"+str(i)+".npy",u)

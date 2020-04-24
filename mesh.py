@@ -11,7 +11,7 @@ import math
 
 # figure out how to normalize ucrit
 # combine the different remeshing options into a single func with a switch argument
-# remeshing process is a little inefficient. not sure how to speed up though. 
+# remeshing process is a little inefficient. not sure how to speed up though
 
 TOL=1e-12
 
@@ -41,13 +41,6 @@ class RectMesh2D:
 
         dx,dy = self.dx0,self.dy0
         Nbc = self.Nbc
-
-        xwr = 2*math.ceil(xw/2/self.dx0)
-        ywr = 2*math.ceil(yw/2/self.dy0)
-
-        #round
-        xw = xwr*self.dx0
-        yw = ywr*self.dy0
 
         self.shape0_comp = (int(round(xw/dx)+1),int(round(yw/dy)+1))
         xres,yres = self.shape0_comp[0] + 2*Nbc , self.shape0_comp[1] + 2*Nbc
@@ -80,6 +73,15 @@ class RectMesh2D:
 
         self.rfacxa = self.rfacxa0 = np.full(xres-1,1)
         self.rfacya = self.rfacya0 = np.full(yres-1,1)
+
+    def snapto(self,xw,yw):
+        xwr = 2*math.ceil(xw/2/self.dx0)
+        ywr = 2*math.ceil(yw/2/self.dy0)
+
+        #round
+        xw = xwr*self.dx0
+        yw = ywr*self.dy0
+        return xw, yw
 
     def dxa2xa(self,dxa):
         N = len(dxa)
@@ -192,22 +194,26 @@ class RectMesh2D:
 
     def refine_by_two(self,u0,crit_val):
         ''' uses a hybrid approach where cells tagged are based on the product of field amplitude
-            and second derivative amplitude '''
+            and second derivative magnitude '''
 
         ix = self.ccel_ix
 
         xdif2 = np.empty_like(u0,dtype=np.complex128)
-        xdif2[1:-1] = u0[2:]+u0[:-2] - 2 * u0[1:-1]
+        xdif2[1:-1] = u0[2:]+u0[:-2] - 2*u0[1:-1]
 
         xdif2[0] = xdif2[-1] = 0
 
         ydif2 = np.empty_like(u0,dtype=np.complex128)
-        ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2 * u0[:,1:-1]
+        ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2*u0[:,1:-1]
 
         ydif2[:,0] = ydif2[:,-1] = 0
 
         umaxx = np.max(np.abs(xdif2),axis=1)*np.max(np.abs(u0),axis=1)
         umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
+
+        #out = np.abs(xdif2) * np.abs(u0)
+        #plt.imshow(out,vmax=1e-4)
+        #plt.show()
 
         umaxy = np.max(np.abs(ydif2),axis=0)*np.max(np.abs(u0),axis=0)
         umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
