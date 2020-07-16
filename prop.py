@@ -462,6 +462,7 @@ class Prop3D:
             
             ## Total power monitor ##
             self.totalpower[i] = overlap_nonu(u,u,weights)
+            print(self.totalpower[i])
 
             ## Other monitors ##
             if u1_func is not None:

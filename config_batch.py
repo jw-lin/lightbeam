@@ -3,8 +3,8 @@
 ################################
 
 import numpy as np
-wl0s = np.linspace(1,2.5,31)
-#wl0s = [1.45,1.5,1.55,1.6]
+#wl0s = np.linspace(1,2.5,31)
+wl0s = [1.45,1.5,1.55,1.6]
 
 ########################################
 ## lantern parameters (assumed 5core) ##
@@ -56,7 +56,7 @@ sig_max = 3. + 0.j
 ## set launch field npy file ##
 ###############################
 
-u0_header = "psf"
+u0_header = "psfs/psf"
 
 #####################
 ## reference index ##

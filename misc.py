@@ -25,10 +25,10 @@ def resize(u0,shape):
     return ur+1.j*ui
 
 def overlap(u1,u2,weight=1):
-    return weight*np.abs(np.sum(np.conj(u1)*u2))
+    return weight*np.abs(np.sum(np.conj(u2)*u1))
 
 def overlap_nonu(u1,u2,weights):
-    return np.abs(np.sum(weights*np.conj(u1)*u2))
+    return np.abs(np.sum(weights*np.conj(u2)*u1))
 
 def normalize(u0,weight=1,normval = 1):
     norm = np.sqrt(normval/overlap(u0,u0,weight))

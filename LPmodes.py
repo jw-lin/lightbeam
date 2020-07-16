@@ -2,8 +2,20 @@ import numpy as np
 from scipy.special import jn_zeros, jn, kn
 from scipy.optimize import brentq
 
-def get_V(k0,coreradius,ncore,nclad):
-    return k0 * coreradius * np.sqrt(ncore**2-nclad**2)
+def get_NA(ncore,nclad):
+    return np.sqrt(ncore*ncore - nclad*nclad)
+
+def get_V(k0,rcore,ncore,nclad):
+    return k0 * rcore * get_NA(ncore,nclad)
+
+def get_MFD(k0,rcore,ncore,nclad):
+    """Marcuse approx. for straight step index fiber"""
+    V = get_V(k0,rcore,ncore,nclad)
+    return 2 * rcore * (0.65 + 1.619/np.power(V,1.5) + 2.879/np.power(V,6))
+
+def get_MFD_from_NA(k0,rcore,ncore,NA):
+    nclad = np.sqrt(ncore*ncore - NA*NA)
+    return get_MFD(k0,rcore,ncore,nclad)
 
 def get_modes(V):
     '''frequency cutoff occurs when b(V) = 0.  solve eqn 4.19.
@@ -122,7 +134,7 @@ def lpfield(xg,yg,l,m,a,wl0,ncore,nclad,which = "cos"):
     #print(np.sqrt(nclad**2+b*(ncore**2-nclad**2)))
 
     u = V*np.sqrt(1-b)
-    v = V*np.sqrt(b)
+    v = V*np.sqrt(b) 
 
     fieldout = np.zeros_like(rs,dtype = np.complex128)
     
@@ -130,7 +142,7 @@ def lpfield(xg,yg,l,m,a,wl0,ncore,nclad,which = "cos"):
     outmask = np.nonzero(rs>a)
 
     fieldout[inmask] = jn(l,u*rs[inmask]/a)
-    fieldout[outmask] = jn(l,u)/kn(l,v) * kn(l, v*rs[outmask]/a)
+    fieldout[outmask] = jn(l,u)/kn(l,v) * kn(l,v*rs[outmask]/a)
 
     #cosine/sine modulation
     phis = np.arctan2(yg,xg)
@@ -140,3 +152,62 @@ def lpfield(xg,yg,l,m,a,wl0,ncore,nclad,which = "cos"):
         fieldout *= np.sin(l*phis)
 
     return fieldout
+
+def get_IOR(wl):
+    """ for fused silica """
+    wl2 = wl*wl
+    return np.sqrt(0.6961663 * wl2 / (wl2 - 0.0684043**2) + 0.4079426 * wl2 / (wl2 - 0.1162414**2) + 0.8974794 * wl2 / (wl2 - 9.896161**2) + 1)
+
+"""
+rcore = 2.2
+NA = 0.16
+wl0 = 1.55
+ncore = 4
+nclad = np.sqrt(ncore*ncore-NA*NA)
+
+
+print(nclad,ncore)
+
+k0 = 2*np.pi/wl0
+
+print(get_MFD(k0,rcore,ncore,nclad))
+"""
+"""
+import matplotlib.pyplot as plt
+
+wl = 1.
+k = 2*np.pi/wl
+ncore = 1.4504
+nclad = 1.4504 - 5.5e-3
+
+rcore = 12
+V = get_V(k,rcore,ncore,nclad)
+
+modes = get_modes(V)
+print(modes)
+xa = ya = np.linspace(-20,20,801)
+xg, yg = np.meshgrid(xa,ya)
+
+
+fig,axs = plt.subplots(7,6)
+
+for mode in modes:
+    if mode[0] == 0:
+        field = lpfield(xg,yg,mode[0],mode[1],rcore,wl,ncore,nclad)
+        axs[0,2*mode[1]-2].imshow(np.real(field),vmin = -np.max(np.real(field)),vmax = np.max(np.real(field)))
+    else:
+        fieldcos = lpfield(xg,yg,mode[0],mode[1],rcore,wl,ncore,nclad,'cos')
+        fieldsin = lpfield(xg,yg,mode[0],mode[1],rcore,wl,ncore,nclad,'sin')
+        axs[mode[0],2*mode[1]-2].imshow(np.real(fieldcos),vmin = -np.max(np.real(fieldcos)),vmax = np.max(np.real(fieldcos)))
+        axs[mode[0],2*mode[1]-1].imshow(np.real(fieldsin),vmin = -np.max(np.real(fieldsin)),vmax = np.max(np.real(fieldsin)))
+
+for _axs in axs:
+    for ax in _axs:
+        ax.set_frame_on(False)
+        ax.axes.get_yaxis().set_visible(False)
+        ax.axes.get_xaxis().set_visible(False)
+
+plt.subplots_adjust(hspace=0,wspace=0)
+
+plt.show()
+"""

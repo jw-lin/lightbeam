@@ -11,9 +11,6 @@ from config_batch import *
 import dask
 from dask.distributed import Client, progress
 
-parser = argparse.ArgumentParser("propagate field through system specified in top of runbpm.py")
-args = parser.parse_args()
-
 def main(wl,u0f):
     u0 = np.load(u0f)
 
@@ -31,7 +28,6 @@ def main(wl,u0f):
     xyslice = np.s_[xslice,yslice]
 
     prop = Prop3D(wl,mesh,optic,n0)
-
     u = prop.prop2end(u0,xyslice=xyslice,zslice=zslice,u1_func = u1_func,writeto=writeto,ucrit=ucrit,remesh_every=remesh_every,dynamic_n0=dynamic_n0)
 
     xg,yg = np.meshgrid(mesh.xy.xa,mesh.xy.ya,indexing='ij')

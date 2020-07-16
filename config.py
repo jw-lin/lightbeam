@@ -26,7 +26,7 @@ xw0 = 440
 yw0 = 440
 zw = 13800
 ds = 2
-dz = 1
+dz = 2
 
 ######################################
 ## transverse mesh growth functions ##
@@ -39,7 +39,7 @@ yw_func = xw_func
 ## mesh refinement options ##
 #############################
 
-ucrit = 2.e-7
+ucrit = 4.e-7
 remesh_every = 20
 max_remesh_iters = 6
 
@@ -54,7 +54,7 @@ sig_max = 3. + 0.j
 ## set launch field npy file ##
 ###############################
 
-u0_fname = "PSF0_trunc.npy"
+u0_fname = "./psfs/psf0.npy"
 
 #####################
 ## reference index ##
