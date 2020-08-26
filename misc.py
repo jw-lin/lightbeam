@@ -3,6 +3,7 @@
 import numpy as np
 from bisect import bisect_left
 import time
+from scipy.interpolate import RectBivariateSpline
 import cv2
 
 def getslices(bounds,arr):
@@ -23,6 +24,16 @@ def resize(u0,shape):
     ur = cv2.resize(ur,shape)
     ui = cv2.resize(ui,shape)
     return ur+1.j*ui
+
+def resize2(image,newshape):
+    '''another resampling function that uses scipy, not cv2'''
+    xpix = np.arange(image.shape[0])
+    ypix = np.arange(image.shape[1])
+
+    xpix_new = np.linspace(xpix[0],xpix[-1],newshape[0])
+    ypix_new = np.linspace(ypix[0],ypix[-1],newshape[1])
+
+    return RectBivariateSpline(xpix,ypix,image)(xpix_new,ypix_new)
 
 def overlap(u1,u2,weight=1):
     return weight*np.abs(np.sum(np.conj(u2)*u1))

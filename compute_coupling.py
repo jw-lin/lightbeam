@@ -124,8 +124,8 @@ def compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,rcore0,wl0,fname):
     lazy_results = []
 
     ## now we need to pick a psf from the array of psfs and do an optimization to get the optimize the F#
-    # choosing 42 is arbitrary
-    pick = 42
+    # which is arbitrary
+    pick = 24
     #pick = 0
     
     print("selected psf for opt shown: ")
@@ -137,8 +137,9 @@ def compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,rcore0,wl0,fname):
     V = LPmodes.get_V(k0,rcore0,ncore,nclad)
     modes = LPmodes.get_modes(V)
     opt = scale_u0_all(psfs[pick],modes,rcore0,ncore,nclad,wl0)
-
     focal_plane_width = opt[2]
+
+    print("optimal focal plane width: " + str(focal_plane_width))
 
     for i in range(len(psfs)):
         psf = psfs[i]
@@ -331,7 +332,7 @@ if __name__ == "__main__":
     # blue edge of Y located at 6 - 8 mode number transition when rcore = 6.21 um
     # red edge of J located at 3 - 6 mode # transition when rcore = 6.41 um
     
-    wl0 = 0.98 #um
+    wl0 = 1.0 #um
 
     '''
     # SMF coupling
@@ -348,16 +349,21 @@ if __name__ == "__main__":
     #print(compute_SMF_coupling(psfs))
 
     '''
-    
+    """
     #fused silica @ 1um
     ncore = 1.4504
     nclad = 1.4504 - 5.5e-3
 
-    psfs = np.load("psfs_oldgen.npy")
+    #f = h5py.File("apo_test.hdf5","r")
+
+    #psfs_unapo = np.load("psfs_oldgen.npy")
+    #psfs = f["psfs"]
+    psfs = np.load("psfs_k2y.npy")
 
     rcores = np.linspace(2,10,200)
-    compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,6.21,wl0,"coupling_vs_r_oldgen")
-    
+    compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,6.21,wl0,"coupling_vs_r_sr0pt1_K2Y")
+    """
+
     """
     seed = 123456789
     tele = AOtele.make_tele(0.108=,seed)
