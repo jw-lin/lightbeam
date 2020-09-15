@@ -114,16 +114,21 @@ class AOtele:
         self.current_phase_screen = None
         self.wf_pupil,self.wf_pupil_hires,self.wf_focal = None,None,None
 
+        self.PIAA_args,self.col_args = None,None
+
     def init_collimator(self,beam_radius,col_res=512):
         """the collimator can run on a higher res than regular pupil plane so that aliasing is prevented when also using PIAA"""
+
+        self.col_args = (beam_radius,col_res)
 
         print("setting up collimator...")
         self.collimator_grid = hc.make_pupil_grid(col_res, diameter = beam_radius*2)
         self.propagator = hc.FraunhoferPropagator(self.collimator_grid,self.focal_grid,focal_length=self.fnum*2*beam_radius) # what's the focal length after PIAA???
 
         def _inner_(wf):
+            _power = wf.total_power
+
             reals,imags = wf.real,wf.imag
-            
             reals = np.reshape(reals, (self.hi_pupil_res,self.hi_pupil_res) )
             imags = np.reshape(imags, (self.hi_pupil_res,self.hi_pupil_res) )
 
@@ -135,13 +140,17 @@ class AOtele:
                 imags = imags.flatten()
 
             new_wf = hc.Wavefront(hc.Field(reals+1.j*imags,self.collimator_grid), wf.wavelength)
-            new_wf.total_power = 1
+            # make sure power is conserved
+            new_wf.total_power = _power
             return new_wf
 
         self.collimate = _inner_
         print("collimator setup complete")
 
-    def init_PIAA(self,beam_radius,sep,inner=0,outer=3,IOR=1.48,pad=1):
+    def init_PIAA(self,beam_radius,sep,inner=0,outer=3,IOR=1.48):
+
+        self.PIAA_args = (beam_radius,sep,inner,outer,IOR)
+
         print("setting up PIAA lenses...")
         collimator_grid = self.collimator_grid if self.collimator_grid is not None else self.pupil_grid
 
@@ -151,7 +160,7 @@ class AOtele:
         r1,r2 = PIAA.make_remapping_gauss_annulus(self.pupil_plane_res[0],self.obstr_frac,inner,outer)
         z1,z2 = PIAA.make_PIAA_lenses(r1*beam_radius,r2*beam_radius,IOR,IOR,sep)
 
-        self.apodize,self.apodize_backwards = PIAA.fresnel_apodizer(collimator_grid,beam_radius,sep,pad,r1,r2,z1,z2,IOR,IOR)
+        self.apodize,self.apodize_backwards = PIAA.fresnel_apodizer(collimator_grid,beam_radius,sep,r1,r2,z1,z2,IOR,IOR)
         print("PIAA setup complete")
 
     def gen_wf(self,wl=None):
@@ -303,6 +312,13 @@ class AOtele:
         _args.create_dataset("seed",data=tele.seed,dtype = int)
         _args.create_dataset("sample_freq",data=tele.sampling_freq)
 
+        if self.collimate is not None:
+            _args.create_dataset("col_args",data=tele.col_args)
+
+        if self.apodize is not None:
+            _args.create_dataset("PIAA_args",data=tele.PIAA_args)
+        
+
     def get_perfect_wfs(self,wl=None):
         """compute and save perfect pupil plane and focal plane wavefronts"""
 
@@ -360,7 +376,6 @@ class AOtele:
 
         j = 0
         for i in range(len(t_arr)):
-
             self.get_screen()
             self.update_DM(wf_pupil,leakage,gain)
 
@@ -435,15 +450,24 @@ def setup_tele(fp=0.2,diam = 4.2,fnum = 9.5,num_acts = 30,ref_wl=1.e-6,dt=0.001,
         wl0 = _args['wl0'][()]
         OSL = _args['OSL'][()]  #OSL not used atm, since phase screen generator is currently running Kolmogorov, not von Karman
         vel = _args['vel'][()]
-        dt = _args['dt'][()]
+        dt = _args['sample_freq'][()]
         diam = _args['diam'][()]
         fnum = _args['fnum'][()]
         num_acts = _args['num_acts'][()]
         obstr_frac = _args['obstr_frac'][()]
         seed = _args['seed'][()]
 
+        col_args = _args['col_args']
+        PIAA_args = _args['PIAA_args']
+
         tele = AOtele(diam,fnum,wl0,num_acts,wl0,obstr_frac)
         tele.make_turb(fp0,wl0,dt,vel,seed)
+
+        if col_args is not None:
+            tele.init_collimator(*col_args)
+        if PIAA_args is not None:
+            tele.init_PIAA(*PIAA_args)
+
     else:
         tele = AOtele(diam,fnum,ref_wl,num_acts)
         tele.make_turb(fp,ref_wl,dt,seed=seed)
@@ -470,6 +494,17 @@ if __name__ == "__main__":
     ### configurations ###
 
     fileout = "quick_PIAA_test13"
+
+  
+    f = h5py.File(fileout+".hdf5", "r")
+    fargs = f['tele_args']
+
+    tele2 = setup_tele(_args=fargs)
+    tele2.get_perfect_wfs()
+
+    plt.imshow(np.abs(get_u(tele2.wf_focal)))
+    plt.show()
+
 
     ## telescope physical specs ##
     tele_diam = 10.0 #4.2 # meters

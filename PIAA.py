@@ -202,7 +202,7 @@ def form_lens_height_maps(r1,r2,z1,z2,extent,res):
 
     return z1g,z2g
 
-def fresnel_apodizer(pupil_grid,radius,sep,pad,r1,r2,z1,z2,IOR1,IOR2):
+def fresnel_apodizer(pupil_grid,radius,sep,r1,r2,z1,z2,IOR1,IOR2):
     # pupil_grid: regular Cartesian grid across beam
     # pad: padding factor for Fresnel prop section
     # r1,r2: aperture remapping arrays (r1,r2 are normalized)
@@ -218,20 +218,12 @@ def fresnel_apodizer(pupil_grid,radius,sep,pad,r1,r2,z1,z2,IOR1,IOR2):
 
     z1g , z2g = form_lens_height_maps(r1,r2,z1,z2,radius,res)
 
-    if pad != 1:
-        padded_pupil_grid = hc.make_pupil_grid(pad*res,pad*2*radius)
-        prop = hc.AngularSpectrumPropagator(padded_pupil_grid,sep)
-    else: 
-        prop =  hc.AngularSpectrumPropagator(pupil_grid,sep)
+    prop =  hc.AngularSpectrumPropagator(pupil_grid,sep)
 
     def _inner_(wf):
         wf = prop_through_lens(wf,z1g,IOR1)
-        
-        if pad != 1:
-            wf_pad = PaddedWavefront(wf.electric_field,wf.wavelength,pad_factor=pad)
-            wf = PaddedWavefront.remove_pad(prop(wf_pad),pad)
-        else:
-            wf = prop(wf)
+    
+        wf = prop(wf)
         
         wf = prop_through_lens(wf,z2g,IOR2)
         wf.total_power=1
@@ -240,11 +232,7 @@ def fresnel_apodizer(pupil_grid,radius,sep,pad,r1,r2,z1,z2,IOR1,IOR2):
     def _inner_backwards(wf):
         wf = prop_through_lens(wf,-z2g,IOR2)
         
-        if pad != 1:
-            wf_pad = PaddedWavefront(wf.electric_field,wf.wavelength,pad_factor=pad)
-            wf = PaddedWavefront.remove_pad(prop.backward(wf_pad),pad)
-        else:
-            wf = prop.backward(wf)
+        wf = prop.backward(wf)
         
         wf = prop_through_lens(wf,-z1g,IOR1)
         wf.total_power=1
