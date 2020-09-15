@@ -57,15 +57,28 @@ def get_power_in_mode(u0,rcore,ncore,nclad,mode,width,wl0):
     ya = np.linspace(-width,width,u0.shape[1])
     xg,yg = np.meshgrid(xa,ya)
 
-    _power=0
+    #xa = np.linspace(-width*3,width*3,u0.shape[0]*3)
+    #ya = np.linspace(-width*3,width*3,u0.shape[1]*3)
+    #xg,yg = np.meshgrid(xa,ya)
+
+    s = u0.shape[0]
+
     if mode[0] == 0:
-        field = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad))
+        lf = LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad)
+        field = normalize(lf)#[s:-s,s:-s]
+        #field = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad))
         #field = normalize(LP01gauss(xg,yg,rcore,wl0,ncore,nclad))
-        power = np.power(overlap(u0,field),2)
-        return power
+        _power = np.power(overlap(u0,field),2)
+        return _power
     else:
-        field0 = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"cos"))
-        field1 = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"sin"))
+        #field0 = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"cos"))
+        #field1 = normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"sin"))
+        lf0 = LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"cos")
+        lf1 = LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"sin")
+        
+        field0 = normalize(lf0)#[s:-s,s:-s]
+        field1 = normalize(lf1)#[s:-s,s:-s]
+        
         power0 = np.power(overlap(u0,field0),2)
         power1 = np.power(overlap(u0,field1),2)
         return power0+power1
@@ -138,6 +151,79 @@ def compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,rcore0,wl0,fname):
     modes = LPmodes.get_modes(V)
     opt = scale_u0_all(psfs[pick],modes,rcore0,ncore,nclad,wl0)
     focal_plane_width = opt[2]
+
+    print("optimal focal plane width: " + str(focal_plane_width))
+
+    for i in range(len(psfs)):
+        psf = psfs[i]
+        lazy_result = dask.delayed(compute_coupling_vs_r_single)(psf,focal_plane_width,rcores,ncore,nclad,rcore0,wl0)
+        lazy_results.append(lazy_result)
+
+    futures = dask.persist(*lazy_results)
+    results = np.array(dask.compute(*futures))
+
+    # save to file
+
+    with h5py.File(fname+".hdf5", "w") as f:
+        f.create_dataset("coupling", data = results)
+        f.create_dataset("rcores", data = rcores)
+        f.create_dataset("rcore0", data = rcore0)
+        f.create_dataset("ncore", data = ncore)
+        f.create_dataset("nclad", data = nclad)
+        f.create_dataset("wl0", data = wl0)
+        f.create_dataset("w", data = focal_plane_width)
+        f.create_dataset("SMFcoupling", data = compute_SMF_coupling(psfs))
+
+    # show prelim results
+
+    results_avg = np.mean(results,axis=0)
+    results_std = np.std(results,axis=0)
+
+    plt.plot(rcores,results_avg,color='k',ls='None',marker='.')
+    plt.fill_between(rcores,results_avg-results_std,results_avg+results_std,color='0.75',alpha=0.5)
+
+    plt.show()
+
+def parallel_avg_coupling(w,rcore,ncore,nclad,psfs,modes,wl0):
+    lazy_powers = []
+
+    for psf in psfs:
+        lazy_powers.append( dask.delayed(get_power_in_modes)(w,rcore,ncore,nclad,psf,modes,wl0))
+
+    futures = dask.persist(*lazy_powers)
+    coupling = np.array(dask.compute(*futures))
+
+    return -np.mean(coupling)
+
+def scale_u0_all_2(psfs,rcore,ncore,nclad,wl0):
+    k0 = 2*np.pi/wl0
+    V = LPmodes.get_V(k0,rcore,ncore,nclad)
+    modes = LPmodes.get_modes(V)
+
+    res = minimize(parallel_avg_coupling,80,args=(rcore,ncore,nclad,psfs,modes,wl0))
+    w = np.abs(res.x[0])
+    return w
+
+def compute_coupling_vs_r_parallel2(psfs,rcores,ncore,nclad,rcore0,wl0,fname,width=None):
+    """compute avg coupling into MM fibers of various sizes given an input list of psfs. save to hdf5"""
+
+    ncores = 8
+
+    ## set up parallel stuff
+    client = Client(threads_per_worker=1, n_workers=ncores)
+    lazy_results = []
+
+    ## compute avg coupling into selected fiber dimension (rcore0) and adjust focal plane scale to maximize coupling
+
+    if width is None:
+        opt = scale_u0_all_2(psfs,rcore0,ncore,nclad,wl0)
+        focal_plane_width = opt
+    else:
+        focal_plane_width = width
+
+    #k0 = 2*np.pi/wl0
+    #V = LPmodes.get_V(k0,rcore0,ncore,nclad)
+    #modes = LPmodes.get_modes(V)
 
     print("optimal focal plane width: " + str(focal_plane_width))
 
@@ -327,6 +413,41 @@ def compute_SMF_coupling(psfs):
 
     return np.mean(results)
 
+
+def coupling_vs_r_pupilplane_single(tele:AOtele.AOtele,pupilfields,rcore,ncore,nclad,wl0):
+    k0 = 2*np.pi/wl0
+
+    fieldshape = pupilfields[0].shape
+
+    #need to generate the available modes
+    V = LPmodes.get_V(k0,rcore,ncore,nclad)
+    modes = LPmodes.get_modes(V)
+    lpfields = []
+
+    for mode in modes:
+        if mode[0] == 0:
+            lpfields.append( normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad)) )
+
+        else:
+            lpfields.append( normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"cos")) )
+            lpfields.append( normalize(LPmodes.lpfield(xg,yg,mode[0],mode[1],rcore,wl0,ncore,nclad,"sin")) )
+    
+    lppupilfields = []
+    
+    #then backpropagate
+    for field in lpfields:
+        wf = hc.Wavefront(hc.Field(field.flatten(),tele.focalgrid),wavelength = wl0*1.e-6)
+        pupil_wf = tele.back_propagate(wf,True)
+        lppupilfields.append( pupil_wf.electric_field.reshape(fieldshape) )
+    
+    lppupilfields = np.array(lppupilfields)
+    pupilfields = np.array(pupilfields)
+
+    #compute total overlap
+    powers = np.sum( pupilfields * lppupilfields , axes = (1,2) )
+
+    return np.mean(powers),np.stddev(powers)
+
 if __name__ == "__main__":
     ## in wavelength space:
     # blue edge of Y located at 6 - 8 mode number transition when rcore = 6.21 um
@@ -349,20 +470,70 @@ if __name__ == "__main__":
     #print(compute_SMF_coupling(psfs))
 
     '''
-    """
+
+    #_norm3 = np.sqrt(28444444444444.445)
+    #_norm = np.sqrt(256000000000000.3)
+    #_norm = np.sqrt(113777777777777.69)
+    #power norm fac: 28444444444444.445+0j
+
+    _norm2 = np.sqrt(455111111111111.1)
+
     #fused silica @ 1um
     ncore = 1.4504
     nclad = 1.4504 - 5.5e-3
 
-    #f = h5py.File("apo_test.hdf5","r")
+    f = h5py.File("quick_PIAA_test13.hdf5","r")
+    f2 = h5py.File("quick_noPIAA_test12.hdf5","r")
 
     #psfs_unapo = np.load("psfs_oldgen.npy")
-    #psfs = f["psfs"]
-    psfs = np.load("psfs_k2y.npy")
+    psfs = f["psfs"]
+    psfs2 = f2["psfs"]
 
-    rcores = np.linspace(2,10,200)
-    compute_coupling_vs_r_parallel(psfs,rcores,ncore,nclad,6.21,wl0,"coupling_vs_r_sr0pt1_K2Y")
+    print(psfs2[0].shape)
+
     """
+
+    resampled_psfs = []
+    for psf in psfs:
+        resampled_psfs.append(normalize(resize(psf,(256,256))))
+
+    """
+    i = 1
+
+    print(np.sum(psfs[i]*np.conj(psfs[i])))
+
+    rcore = 6.21
+    modes = [(0,1),(1,1),(0,2),(2,1)]
+
+    #rcore = 4
+    #modes = [(0,1),(1,1)]
+
+    _w = scale_u0_all(psfs[i],modes,rcore,ncore,nclad,1)[2]
+    _w2 = scale_u0_all(psfs2[i],modes,rcore,ncore,nclad,1)[2]
+
+    print(_w,_w2)
+
+    print(get_power_in_modes(_w,rcore,ncore,nclad,psfs[i],modes,1))
+    print(get_power_in_modes(_w2,rcore,ncore,nclad,psfs2[i],modes,1))
+
+    
+    plt.imshow(np.abs(psfs[i]))
+    plt.show()
+
+    plt.imshow(np.abs(psfs2[i]))
+    plt.show()
+
+
+
+
+    #psfs = np.load("psfs_k2y.npy")
+    #w = 54.15074889973275
+
+    #rcores = np.linspace(2,10,200)
+    #compute_coupling_vs_r_parallel(resampled_psfs,rcores,ncore,nclad,6.21,wl0,"coupling_vs_r_PIAA_old")
+
+    #54.239484645246364
+    #54.15074889973275 @256 res
 
     """
     seed = 123456789

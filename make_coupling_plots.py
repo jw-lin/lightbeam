@@ -140,4 +140,4 @@ def c_vs_wl(fname):
     plt.show()
 
 if __name__ == "__main__":
-    c_vs_d("coupling_vs_r_sr0pt1_K2Y.hdf5","10")
+    c_vs_d("coupling_vs_r_PIAA_new.hdf5","10")

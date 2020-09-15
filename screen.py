@@ -36,7 +36,8 @@ class PhaseScreenGenerator(object):
         with np.errstate(divide='ignore'):
             self.P =   2.*np.pi/S * self.N * r0**(-5./6.) * (fy*fy + fx*fx)**(-11./12.) * np.sqrt(0.00058) * (wl0/wl)
             self.P[0,0] = 0. # no infinite power
-        
+
+            """
             plt.loglog(fftshift(fx[0]), np.sqrt(fftshift(filter_func(filter_scale*fx[0],0)))*np.max(self.P[0]) ,color='white')
             
             for _fx,_P in zip(fx[0],self.P[0]):
@@ -50,6 +51,7 @@ class PhaseScreenGenerator(object):
             plt.xlabel(r"wavenumber ($m^{-1}$) ")
             plt.ylabel("power")
             plt.show()
+            """
            
 
         # set phase scale

@@ -1,12 +1,3 @@
-import numpy as np
-import h5py
+a = (2,3)
 
-f = h5py.File("mytestfile.hdf5", "w")
-f.create_dataset("value",data = 1)
-f.close()
-
-f = h5py.File("mytestfile.hdf5",'r')
-a = f["value"][()]
-print(a)
-f.close()
-
+print((1,*a))

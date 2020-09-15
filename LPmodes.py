@@ -58,7 +58,7 @@ def get_mode_cutoffs(l, mmax):
         else:
             return np.array((0.,))
 
-def findBetween(solve_fn, lowbound, highbound, args=(), maxj=15):
+def findBetween(solve_fn, lowbound, highbound, args=(), maxj=10):
     v = [lowbound, highbound]
     s = [solve_fn(lowbound, *args), solve_fn(highbound, *args)]
     

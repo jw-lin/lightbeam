@@ -18,12 +18,22 @@ class PaddedWavefront(hc.Wavefront):
         self.radius = electric_field.grid[-1,0]
         self.total_radius = self.radius * pad_factor
         self.pad_factor = pad_factor
+        self.beam_res = res
         self.res = pad_factor*res
 
         padded_electric_field = hc.Field(new_field,hc.make_pupil_grid(pad_factor*res,2*pad_factor*self.radius ))
 
         super().__init__(padded_electric_field, wavelength, input_stokes_vector)
-
+    
+    @staticmethod
+    def remove_pad(wf,pad):
+        res = wf.electric_field.shaped.shape[0]
+        radius = wf.electric_field.grid[-1,0]
+        beamres = int(res/pad)
+        padpix = int( (pad-1)*beamres/2 )
+        field = wf.electric_field.shaped[padpix:-padpix,padpix:-padpix]
+        grid = hc.make_pupil_grid(beamres,2*radius)
+        return hc.Wavefront(hc.Field(field.flatten(),grid),wavelength = wf.wavelength)
 
 def make_remapping_gauss(res,obs,trunc=0.95,sigma='auto'):
     """make remapping arrays corresponding to gaussian INTENSITY output"""
@@ -48,11 +58,8 @@ def make_remapping_gauss_annulus(res,obs,a,b,sigma='auto'):
     ra = np.linspace(obs,1,res)
     out = np.sqrt( - 2*np.log( np.exp(-0.5*a*a) - (ra*ra-obs*obs)/(1-obs*obs) * (np.exp(-0.5*a*a) - np.exp(-0.5*b*b))) )
 
-    print(ra[0],out[0])
-
-
     if sigma == 'auto':
-        out /= np.max(out)
+        out /= (np.max(out))
     else:
         out *= sigma
     
@@ -184,8 +191,8 @@ def form_lens_height_maps(r1,r2,z1,z2,extent,res):
     xg , yg = np.meshgrid(xa,ya)
     rg = np.sqrt(xg*xg+yg*yg)
 
-    z1_func = UnivariateSpline(r1,z1,k=1,s=0,ext='const')
-    z2_func = UnivariateSpline(r2,z2,k=1,s=0,ext='const')
+    z1_func = UnivariateSpline(r1,z1,k=3,s=0,ext='const')
+    z2_func = UnivariateSpline(r2,z2,k=3,s=0,ext='const')
 
     z1g = z1_func(rg)
     z1g-=np.min(z1g)
@@ -195,73 +202,103 @@ def form_lens_height_maps(r1,r2,z1,z2,extent,res):
 
     return z1g,z2g
 
-def fresnel_apodizer(pupil_grid,pad,r1,r2,z1,z2,IOR1,IOR2):
+def fresnel_apodizer(pupil_grid,radius,sep,pad,r1,r2,z1,z2,IOR1,IOR2):
     # pupil_grid: regular Cartesian grid across beam
-    # pad: padding factor
-    # r1,r2,z1,z2: aperture remapping arrays (r1,r2 are normalized)
+    # pad: padding factor for Fresnel prop section
+    # r1,r2: aperture remapping arrays (r1,r2 are normalized)
+    # z1,z2: 1D lens sag profiles
     # IOR, IOR2: refractive indices of first and second lens
     # res is resolution across the beam
-    # resolution across entire simulation is pad  * res
 
-    radius = pupil_grid.x[-1]
+    #radius = pupil_grid.x[-1]
     res = pupil_grid.shape[0]
-
-    print(sep)
 
     r1 *= radius 
     r2 *= radius
 
-    z1g , z2g = form_lens_height_maps(r1,r2,z1,z2,pad*radius,pad*res)
+    z1g , z2g = form_lens_height_maps(r1,r2,z1,z2,radius,res)
 
-    #wf = prop_through_lens(wf,z1g,IOR1)
-
-    prop = hc.AngularSpectrumPropagator(pupil_grid,sep)
+    if pad != 1:
+        padded_pupil_grid = hc.make_pupil_grid(pad*res,pad*2*radius)
+        prop = hc.AngularSpectrumPropagator(padded_pupil_grid,sep)
+    else: 
+        prop =  hc.AngularSpectrumPropagator(pupil_grid,sep)
 
     def _inner_(wf):
         wf = prop_through_lens(wf,z1g,IOR1)
-        wf = prop(wf)
+        
+        if pad != 1:
+            wf_pad = PaddedWavefront(wf.electric_field,wf.wavelength,pad_factor=pad)
+            wf = PaddedWavefront.remove_pad(prop(wf_pad),pad)
+        else:
+            wf = prop(wf)
+        
         wf = prop_through_lens(wf,z2g,IOR2)
-
+        wf.total_power=1
+        return wf
+    
+    def _inner_backwards(wf):
+        wf = prop_through_lens(wf,-z2g,IOR2)
+        
+        if pad != 1:
+            wf_pad = PaddedWavefront(wf.electric_field,wf.wavelength,pad_factor=pad)
+            wf = PaddedWavefront.remove_pad(prop.backward(wf_pad),pad)
+        else:
+            wf = prop.backward(wf)
+        
+        wf = prop_through_lens(wf,-z1g,IOR1)
+        wf.total_power=1
         return wf
 
-    return _inner_
+    return _inner_,_inner_backwards
 
+if __name__ == "__main__":
+    plt.style.use("dark_background")
 
-    #wf.electric_field.grid.
+    radius = 0.013/2 #5
+    sep =  0.12#10
+    IOR = 1.48 #acrylic at 1 um
+    res = 600 #600 seems to be the critical value
+    pad = 1
+    pupil_grid = hc.make_pupil_grid(res,2*radius)
 
+    r1,r2 = make_remapping_gauss_annulus(res,0.23,0,3)
+    z1,z2 = make_PIAA_lenses(r1*radius,r2*radius,IOR,IOR,sep) ## fix radius dependence here!
 
-plt.style.use("dark_background")
+    apodizer = fresnel_apodizer(pupil_grid,sep,pad,r1,r2,z1,z2,IOR,IOR)
 
-radius = 0.013/2 #5
-sep =  0.1#10
-IOR = 1.48 #acrylic at 1 um
-res = 600
-pad = 4
-pupil_grid = hc.make_pupil_grid(res,2*radius)
+    keck_pupil_hires = np.array(fits.open("pupil_KECK_high_res.fits")[0].data,dtype=np.float32)
+    ap_arr = resize2(keck_pupil_hires, (res,res)).flatten()
+    ap = hc.Field(ap_arr,pupil_grid)
 
-r1,r2 = make_remapping_gauss_annulus(600,0.23,0.03,3)
-z1,z2 = make_PIAA_lenses(r1*radius,r2*radius,IOR,IOR,sep) ## fix radius dependence here!
+    plt.imshow(ap.real.reshape((600,600)))
+    plt.show()
+    wf = PaddedWavefront(ap,wavelength=1.e-6, pad_factor=pad)
+    wf.total_power = 1*pad*pad
 
-apodizer = fresnel_apodizer(pupil_grid,pad,r1,r2,z1,z2,IOR,IOR)
+    wf = apodizer(wf)
 
-keck_pupil_hires = np.array(fits.open("pupil_KECK_high_res.fits")[0].data,dtype=np.float32)
-ap_arr = resize2(keck_pupil_hires, (res,res)).flatten()
-ap = hc.Field(ap_arr,pupil_grid)
+    #hc.imshow_field(wf.electric_field)
+    #plt.show()
 
-wf = PaddedWavefront(ap,wavelength=1.e-6, pad_factor=pad)
-wf.total_power = 1
+    p = wf.power.reshape(pad*res,pad*res)
+    fig,ax = plt.subplots(figsize=(4,4))
+    ax.axis("off")
+    plt.xlim(-radius,radius)
+    plt.ylim(-radius,radius)
+    plt.imshow(wf.power.reshape(pad*res,pad*res),vmax=3e-5,extent=(-pad*radius,pad*radius,-pad*radius,pad*radius))
 
-wf = apodizer(wf)
+    plt.show()
 
-p = wf.power.reshape(pad*res,pad*res)
+    """
+    plt.xlim(-radius,radius)
+    plt.plot(np.linspace(-pad*radius,pad*radius,pad*res),p[int(pad/2*res)])
+    plt.ylim(0,1.2e-4)
+    plt.show()
+    """
 
-plt.xlim(-radius,radius)
-plt.ylim(-radius,radius)
-plt.imshow(wf.power.reshape(pad*res,pad*res),vmax=3e-5,extent=(-pad*radius,pad*radius,-pad*radius,pad*radius))
-plt.show()
-
-"""
-plt.xlim(-pad*radius,pad*radius)
-plt.plot(ya, p[:,int(2*res)])
-plt.show()
-"""
+    """
+    plt.xlim(-pad*radius,pad*radius)
+    plt.plot(ya, p[:,int(2*res)])
+    plt.show()
+    """

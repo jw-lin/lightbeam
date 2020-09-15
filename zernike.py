@@ -176,81 +176,82 @@ def phase_screen_func(tmat):
     
     return _inner_
         
+if __name__ == "__main__":
+    
+    from screen import PhaseScreenGenerator
+    plt.style.use('dark_background')
 
-from screen import PhaseScreenGenerator
-plt.style.use('dark_background')
+    names = ["piston","x tilt","y tilt", "defocus", "y astig.", "x astig.", "y coma", "x coma", "y trefoil", "x trefoil", "", ""]
 
-names = ["piston","x tilt","y tilt", "defocus", "y astig.", "x astig.", "y coma", "x coma", "y trefoil", "x trefoil", "", ""]
+    xa=ya = np.linspace(-1,1,200)
+    xg,yg = np.meshgrid(xa,ya)
 
-xa=ya = np.linspace(-1,1,200)
-xg,yg = np.meshgrid(xa,ya)
+    fig,axs = plt.subplots(3,4)
 
-fig,axs = plt.subplots(3,4)
+    for ax in axs:
+        for _ax in ax:
+            _ax.axis("off")
 
-for ax in axs:
-    for _ax in ax:
-        _ax.axis("off")
+    for i in range(3):
+        for j in range(4):
+            k = j+1+4*i 
+            print(k)
+            if names[k-1]=="":
+                axs[i,j].set_title(r"$j=$"+str(k))
+            else:
+                axs[i,j].set_title(r"$j=$"+str(k)+ " , " + names[k-1])
 
-for i in range(3):
-    for j in range(4):
-        k = j+1+4*i 
-        print(k)
-        if names[k-1]=="":
-            axs[i,j].set_title(r"$j=$"+str(k))
-        else:
-            axs[i,j].set_title(r"$j=$"+str(k)+ " , " + names[k-1])
+            axs[i,j].imshow(Zj_cart(k)(xg,yg),vmin=-3,vmax=3)
+    plt.show()
 
-        axs[i,j].imshow(Zj_cart(k)(xg,yg),vmin=-3,vmax=3)
-plt.show()
+    D = 10. # [m]  telescope diameter
+    p = 10/100 # [m/pix] sampling scale
 
-D = 10. # [m]  telescope diameter
-p = 10/100 # [m/pix] sampling scale
+    # set wind parameters
+    vy, vx = 4., 1. # [m/s] wind velocity vector
+    T = 0.01 # [s]  sampling interval
 
-# set wind parameters
-vy, vx = 4., 1. # [m/s] wind velocity vector
-T = 0.01 # [s]  sampling interval
+    # set turbulence parameters
+    r0 = 0.1 # [m]
+    wl0 = 1 #[um]
+    wl = 1 #[um] 
 
-# set turbulence parameters
-r0 = 0.1 # [m]
-wl0 = 1 #[um]
-wl = 1 #[um] 
+    cutoff = 41
 
-cutoff = 41
+    nollmat = compute_noll_mat(cutoff)
 
-nollmat = compute_noll_mat(cutoff)
+    chol = np.linalg.cholesky(nollmat)
 
-chol = np.linalg.cholesky(nollmat)
+    screenfunc = phase_screen_func(chol)
 
-screenfunc = phase_screen_func(chol)
+    xa = np.linspace(-5,5,128)
+    ya = np.linspace(-5,5,128)
+    xg,yg = np.meshgrid(xa,ya)
+    rg = np.sqrt(xg*xg+yg*yg)
 
-xa = np.linspace(-5,5,128)
-ya = np.linspace(-5,5,128)
-xg,yg = np.meshgrid(xa,ya)
-rg = np.sqrt(xg*xg+yg*yg)
+    _s = screenfunc(xg/5,yg/5) * (D/r0)**(5/6)
 
-_s = screenfunc(xg/5,yg/5) * (D/r0)**(5/6)
+    fig,ax = plt.subplots()
 
-fig,ax = plt.subplots()
+    ax.axis("off")
+    ax.imshow(_s,extent=(-5,5,-5,5))
+    plt.show()
 
-ax.axis("off")
-ax.imshow(_s,extent=(-5,5,-5,5))
-plt.show()
+    psgen = PhaseScreenGenerator(D, p, vy, vx, T, r0, wl0, wl,filter_func=high_pass(cutoff),filter_scale=D/2)
+    _s2 = psgen.generate()
+    fig,ax = plt.subplots()
 
-psgen = PhaseScreenGenerator(D, p, vy, vx, T, r0, wl0, wl,filter_func=high_pass(cutoff),filter_scale=D/2)
-_s2 = psgen.generate()
-fig,ax = plt.subplots()
+    ax.axis("off")
+    ax.imshow(_s2,extent=(-5,5,-5,5))
+    plt.show()
 
-ax.axis("off")
-ax.imshow(_s2,extent=(-5,5,-5,5))
-plt.show()
-
-_s3 = (_s + _s2)* (rg/5 <=1)
-plt.imshow(_s3,extent=(-5,5,-5,5))
-plt.show() 
-psgen = PhaseScreenGenerator(D, p, vy, vx, T, r0, wl0, wl)
-_s4 = psgen.generate()
-plt.imshow(_s4,extent=(-5,5,-5,5))
-plt.show()
+    _s3 = (_s + _s2)* (rg/5 <=1)
+    plt.imshow(_s3,extent=(-5,5,-5,5))
+    plt.show() 
+    psgen = PhaseScreenGenerator(D, p, vy, vx, T, r0, wl0, wl)
+    _s4 = psgen.generate()
+    plt.imshow(_s4,extent=(-5,5,-5,5))
+    plt.show()
 
 
 #phase screen low and high pass testing
