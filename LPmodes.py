@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.special import jn_zeros, jn, kn
+from scipy.special import jn_zeros, jn, kn,jv,kv
 from scipy.optimize import brentq
+from numpy.lib import scimath
 
 def get_NA(ncore,nclad):
     return np.sqrt(ncore*ncore - nclad*nclad)
@@ -157,6 +158,102 @@ def get_IOR(wl):
     """ for fused silica """
     wl2 = wl*wl
     return np.sqrt(0.6961663 * wl2 / (wl2 - 0.0684043**2) + 0.4079426 * wl2 / (wl2 - 0.1162414**2) + 0.8974794 * wl2 / (wl2 - 9.896161**2) + 1)
+
+
+def get_num_modes(k0,rcore,ncore,nclad):
+    V = get_V(k0,rcore,ncore,nclad)
+    modes = get_modes(V)
+    num = 0
+    for mode in modes:
+        if mode[0]==0:
+            num+=1
+        else:
+            num+=2
+    return num
+
+def get_all_bs(l, V,bmax):
+
+    def solve_fn(b,V):
+        v = V*scimath.sqrt(b)
+        u = V*scimath.sqrt(1.-b)
+
+        if l == 0:
+            return np.abs(u * jv(1, u) * kv(0, v) - v * jv(0, u) * kv(1, v))
+        else:
+            return np.abs(u * jv(l - 1, u) * kv(l, v) + v * jv(l, u) * kv(l - 1, v))
+    
+    from scipy.optimize import fsolve,minimize
+
+    ret = minimize(solve_fn,[-131],args=(V,),bounds = [(None,bmax)]).x
+
+
+
+    #return fsolve(solve_fn,-2,args=(V,))
+
+
+if __name__ == "__main__":
+
+    import matplotlib.pyplot as plt
+    plt.style.use("dark_background")
+    rcore = 21.8/2
+    ncore = 1.4504
+    nclad = 1.4504 - 5.5e-3
+    
+    import hcipy as hc
+
+    V = get_V(2*np.pi,rcore,ncore,nclad)
+    modes = get_modes(V)
+
+    for mode in modes:
+
+        xa = ya = np.linspace(-15,15,1000)
+        xg , yg = np.meshgrid(xa,ya)
+
+        if mode[0]==0:
+            print(mode)
+            lp= lpfield(xg,yg,mode[0],mode[1],rcore,1,ncore,nclad,'cos')
+            lp /= np.max(lp)
+
+            f = hc.Field(lp.flatten() , hc.make_pupil_grid((1000,1000),diameter=30) )
+
+            hc.imshow_field(f)
+            plt.show()
+            continue
+        else:
+
+            print(mode,"cos")
+            lp= lpfield(xg,yg,mode[0],mode[1],rcore,1,ncore,nclad,'cos')
+            lp /= np.max(lp)
+
+            f = hc.Field(lp.flatten() , hc.make_pupil_grid((1000,1000),diameter=30) )
+
+            hc.imshow_field(f)
+            plt.show()
+
+            print(mode,'sin')
+            lp= lpfield(xg,yg,mode[0],mode[1],rcore,1,ncore,nclad,'sin')
+            lp /= np.max(lp)
+
+            f = hc.Field(lp.flatten() , hc.make_pupil_grid((1000,1000),diameter=30) )
+
+            hc.imshow_field(f)
+            plt.show()
+            
+    '''
+    rcore = 4   
+    wl = np.linspace(1.2,1.4,100)
+    k0 = 2*np.pi/wl
+    ncore = 1.4504
+    nclad = 1.4504 - 5.5e-3
+
+    modenumes = np.vectorize(get_num_modes)(2*np.pi/wl,rcore,ncore,nclad)
+    import matplotlib.pyplot as plt
+    plt.plot(wl,modenumes)
+    plt.show()
+
+    #k = 2*np.pi/0.98
+    #print(get_NA(1.4504 + 0.0088,1.4504))
+    '''
 
 """
 rcore = 2.2

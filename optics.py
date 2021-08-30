@@ -82,20 +82,21 @@ class OpticPrim:
 
 class scaled_cyl(OpticPrim):
     ''' cylinder whose offset from origin and radius scale in the same way'''
-    def __init__(self,xy,r,z_ex,n,nb,scale_func=None,final_scale=1):
+    def __init__(self,xy,r,z_ex,n,nb,z_offset=0,scale_func=None,final_scale=1):
         super().__init__(n)
-        self.p1 = p1 = [xy[0],xy[1],0]
-        self.p2 = [p1[0]*final_scale,p1[1]*final_scale,z_ex]
+        self.p1 = p1 = [xy[0],xy[1],z_offset]
+        self.p2 = [p1[0]*final_scale,p1[1]*final_scale,z_ex+z_offset]
         self.r = r
         self.rsq = r*r
         self.nb2 = nb*nb
         self.n2 = n*n
         self.z_ex = z_ex
+        self.z_offset = z_offset
 
         def linear_func(_min,_max):
             slope =  (_max - _min)/self.z_ex
             def _inner_(z):
-                return slope*z + _min
+                return slope*(z-self.z_offset) + _min
             return _inner_
 
         if scale_func is None:
@@ -105,6 +106,9 @@ class scaled_cyl(OpticPrim):
         self.yoffset_func = linear_func(p1[1],self.p2[1])
 
     def _contains(self,x,y,z):
+        if not (self.z_offset <= z <= self.z_offset+self.z_ex):
+            return False
+
         xdist = x - self.xoffset_func(z)
         ydist = y - self.yoffset_func(z)
         scale = self.scale_func(z)
@@ -122,6 +126,9 @@ class scaled_cyl(OpticPrim):
     
     def set_IORsq(self,out,z,coeff=1):
         '''anti-aliased to improve convergence'''
+        if not (self.z_offset <= z <= self.z_offset+self.z_ex):
+            return
+
         center = (self.xoffset_func(z),self.yoffset_func(z))
         scale = self.scale_func(z)
         bbox,bboxh = self.bbox_idx(z)  
@@ -183,12 +190,66 @@ class lant5(OpticSys):
 
 class lant5big(OpticSys):
     '''corrigan et al. 2018 style photonic lantern except the jacket is fkin huge (as in infinite)'''
-    def __init__(self,rcore,rclad,rjack,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
+    def __init__(self,rcore,rclad,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core1 = scaled_cyl([offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core2 = scaled_cyl([0,offset0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core3 = scaled_cyl([-offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core4 = scaled_cyl([0,-offset0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad,core4,core3,core2,core1,core0]
+        
+        super().__init__(elmnts,njack)
+
+class lant3big(OpticSys):
+    '''3 port lantern, infinite jacket'''
+    def __init__(self,rcore,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
+        core0 = scaled_cyl([0,offset0],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([-np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad,core2,core1,core0]
+        
+        super().__init__(elmnts,njack)
+
+class lant3_ms(OpticSys):
+    '''3 port lantern, infinite jacket, one core is bigger than the rest'''
+    def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
+        core0 = scaled_cyl([0,offset0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([-np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad,core2,core1,core0]
+        
+        super().__init__(elmnts,njack)
+
+class lant6_ms(OpticSys):
+    '''6 port lantern, central core and outer are different sizes'''
+    def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
+        
+        t = 2*np.pi/5
+
+        core0 = scaled_cyl([0,0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        
+        core1 = scaled_cyl([offset0,0],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([offset0*np.cos(t),offset0*np.sin(t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core3 = scaled_cyl([offset0*np.cos(2*t),offset0*np.sin(2*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core4 = scaled_cyl([offset0*np.cos(3*t),offset0*np.sin(3*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core5 = scaled_cyl([offset0*np.cos(4*t),offset0*np.sin(4*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad,core5,core4,core3,core2,core1,core0]
+        
+        super().__init__(elmnts,njack)
+
+class lant5_ms(OpticSys):
+    '''5 port lantern, mode selective'''
+    def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
+        core0 = scaled_cyl([0,0],rcore1,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([offset0,0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([0,offset0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core3 = scaled_cyl([-offset0,0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
+        core4 = scaled_cyl([0,-offset0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core4,core3,core2,core1,core0]
         

@@ -139,7 +139,6 @@ class Prop3D:
         self.power = np.empty((mesh.zres,))
         self.totalpower = np.empty((mesh.zres,))
 
-
     def allocate_mats(self):
         sx,sy = self.mesh.xy.xg.shape,self.mesh.xy.yg.T.shape
         _trimatsx = (genc(sx),genc(sx),genc(sx))
@@ -365,7 +364,7 @@ class Prop3D:
 
     def _pmlcorrect(self,_trimats,which='x'):
         ix = self.mesh.xy.pvert_ix
-        _a,_b,_c = _trimats
+        _a,_b,_c = _trimats 
         
         if which=='x':
             _a[ix] = self._apmlx[:,None]
@@ -377,28 +376,38 @@ class Prop3D:
             _c[ix] = self._cpmly[:,None]
 
     @timeit 
-    def prop2end(self,u,xyslice,zslice,u1_func=None,writeto=None,ucrit=5.e-3,remesh_every=20,dynamic_n0 = True):
+    def prop2end(self,u,xyslice=None,zslice=None,u1_func=None,writeto=None,ucrit=5.e-3,remesh_every=20,dynamic_n0 = True,fplanewidth=0):
         mesh = self.mesh
         PML = mesh.PML
 
-        za_keep = mesh.za[zslice]
-        if type(za_keep) == np.ndarray:
-            minz, maxz = za_keep[0],za_keep[-1]
-            shape = (len(za_keep),*mesh.xg[xyslice].shape)
-        else:
-            raise Exception('uhh not implemented')
-        
-        self.field = np.zeros(shape,dtype=c128)
+        if not (xyslice is None and zslice is None):
+            za_keep = mesh.za[zslice]
+            if type(za_keep) == np.ndarray:
+                minz, maxz = za_keep[0],za_keep[-1]
+                shape = (len(za_keep),*mesh.xg[xyslice].shape)
+            else:
+                raise Exception('uhh not implemented')
+            
+            self.field = np.zeros(shape,dtype=c128)
 
-        xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,u.shape[0])
-        ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,u.shape[1])
-    
+        if fplanewidth == 0:
+            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,u.shape[0])
+            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,u.shape[1])
+        else:
+            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
+            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
+
         dx0 = xa_in[1]-xa_in[0]
         dy0 = ya_in[1]-ya_in[0]
 
-        print("normalizing input file")
-        normalize(u,weight=dx0*dy0)
+        _power = overlap(u,u)
+        print('initial power: ',_power)
 
+        print("normalizing input file")
+        normalize(u,weight=dx0*dy0,normval=_power)
+
+        print('power check: ',overlap(u,u,dx0*dy0))
+        
         __z = 0
 
         #pull xy mesh
@@ -407,6 +416,13 @@ class Prop3D:
 
         #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone!)
         u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
+
+        print("starting field phase, resampled")
+        plt.imshow(np.arctan2(np.imag(u0),np.real(u0)))
+        plt.show()
+
+        _power2 = overlap(u0,u0,dx*dy)
+        print("power inside computation zone: ",_power2)
 
         #now we pad w/ zeros to extend it into the PML zone
         u0 = np.pad(u0,((PML,PML),(PML,PML)))
@@ -424,7 +440,9 @@ class Prop3D:
         u = np.pad(u,((PML,PML),(PML,PML)))
 
         #do another norm to correct for the slight power change you get when resampling. I measure 0.1% change for psflo. should check again
-        norm_nonu(u,weights)
+        norm_nonu(u,weights,_power2)
+
+        print("power of nonuniform field: ",overlap_nonu(u,u,weights))
 
         counter = 0
         total_iters = self.mesh.zres
@@ -453,16 +471,26 @@ class Prop3D:
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
 
+        '''
+        plt.imshow(IORsq__)
+        plt.show()
+
+        IOR0 = xy.get_base_field(IORsq__)
+        plt.imshow(IOR0)
+        plt.show()
+        '''
+
         print("initial shape: ",xy.shape)
-        for i in range(total_iters):        
-            printProgressBar(i,total_iters-1)
+        for i in range(total_iters):       
+            if i%20 == 0: 
+                printProgressBar(i,total_iters-1)
             u0 = xy.get_base_field(u)
             u0c = np.conj(u0)
             weights = xy.get_weights()
             
             ## Total power monitor ##
             self.totalpower[i] = overlap_nonu(u,u,weights)
-            print(self.totalpower[i])
+            #print(self.totalpower[i])
 
             ## Other monitors ##
             if u1_func is not None:
@@ -472,7 +500,7 @@ class Prop3D:
             _z_ = z__ + mesh.half_dz
             __z = z__ + mesh.dz
             
-            if minz<=__z<=maxz:
+            if self.field is not None and (minz<=__z<=maxz):
                 ix0,ix1,ix2,ix3 = mesh.get_loc() 
                 mid = int(u0.shape[1]/2)
 
@@ -481,6 +509,11 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
+                #plt.imshow(np.abs(u0),extent=(-38,38,-38,38))
+                #plt.show()
+                #IOR0 = xy.get_base_field(IORsq__)
+                #plt.imshow(IOR0)
+                #plt.show()
                 #xy.plot_mesh(4)
                 ## update the effective index
                 if dynamic_n0:
@@ -493,9 +526,12 @@ class Prop3D:
 
                 oldxw,oldyw = xy.xw,xy.yw
 
+                new_xw,new_yw = oldxw,oldyw
                 #expand the grid if necessary
-                new_xw = mesh.xwfunc(__z)
-                new_yw = mesh.ywfunc(__z)
+                if mesh.xwfunc is not None:
+                    new_xw = mesh.xwfunc(__z)
+                if mesh.ywfunc is not None:
+                    new_yw = mesh.ywfunc(__z)
 
                 new_xw, new_yw = xy.snapto(new_xw,new_yw)
 
@@ -561,11 +597,41 @@ class Prop3D:
             z__ = __z
             if (i+2)%remesh_every != 0:
                 IORsq__[:,:] = __IORsq
+  
 
+            '''
+            if i%1000==0: 
+                print(z__,self.totalpower[i])
+
+                plt.imshow(IORsq__)
+                plt.show()
+
+                IOR0 = xy.get_base_field(IORsq__)
+                plt.imshow(IOR0)
+                plt.show()
+
+                plt.imshow(np.abs(u0))
+                plt.show()
+            '''
+
+        '''
+        plt.imshow(IORsq__)
+        plt.show()
+
+        IOR0 = xy.get_base_field(IORsq__)
+        plt.imshow(IOR0)
+        plt.show()
+
+        plt.imshow(np.abs(u))
+        plt.show()
+
+        plt.imshow(np.abs(u0))
+        plt.show()
+        '''
         print("final total power",self.totalpower[-1])
         
         if writeto:
             np.save(writeto,self.field)
-        return u
+        return u,u0
 
 

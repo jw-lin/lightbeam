@@ -175,6 +175,11 @@ def phase_screen_func(tmat):
         return out
     
     return _inner_
+
+def inner_product(u0,u1,ds):
+    """inner product which makes use of orthogonality relation of Zernikes as defined in this file"""
+    return np.sum(u0*u1) * ds * ds / np.pi
+
         
 if __name__ == "__main__":
     
@@ -183,9 +188,20 @@ if __name__ == "__main__":
 
     names = ["piston","x tilt","y tilt", "defocus", "y astig.", "x astig.", "y coma", "x coma", "y trefoil", "x trefoil", "", ""]
 
-    xa=ya = np.linspace(-1,1,200)
+    xa=ya = np.linspace(-1,1,1000)
     xg,yg = np.meshgrid(xa,ya)
 
+    z = Zj_cart(2)(xg,yg)
+    plt.imshow(z)
+    plt.show()
+
+    _z = Zj_cart(3)(xg,yg)
+
+    print( inner_product(z,z,2/1000))
+    print( inner_product(z,_z,2/1000))
+
+
+    """
     fig,axs = plt.subplots(3,4)
 
     for ax in axs:
@@ -252,6 +268,7 @@ if __name__ == "__main__":
     _s4 = psgen.generate()
     plt.imshow(_s4,extent=(-5,5,-5,5))
     plt.show()
+    """
 
 
 #phase screen low and high pass testing

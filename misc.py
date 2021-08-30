@@ -19,11 +19,14 @@ def getslices(bounds,arr):
 
 def resize(u0,shape):
     '''resample a complex-valued array'''
-    ur = np.real(u0)
-    ui = np.imag(u0)
-    ur = cv2.resize(ur,shape)
-    ui = cv2.resize(ui,shape)
-    return ur+1.j*ui
+    if u0.dtype == np.complex:
+        ur = np.real(u0)
+        ui = np.imag(u0)
+        ur = cv2.resize(ur,shape)
+        ui = cv2.resize(ui,shape)
+        return ur+1.j*ui
+    else:
+        return cv2.resize(u0,shape)
 
 def resize2(image,newshape):
     '''another resampling function that uses scipy, not cv2'''
