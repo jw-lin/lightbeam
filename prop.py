@@ -15,9 +15,6 @@ plt.style.use('dark_background')
 
 ### to do ###
 
-## convergence plots
-# for both this and rsoft! so i can compare!
-
 ## performance
 
 # maybe adaptive z stepping
@@ -26,7 +23,7 @@ plt.style.use('dark_background')
 
 # more efficient ways to store arrays with many repeated values -- some sort of sparse-like data structure?
 
-# optimize tri_solve_vec : maybe try out dask (parallelize) -- WHY IS THIS ALSO SLOWER AHHHH
+# optimize tri_solve_vec : maybe try out dask (parallelize) -- WHY IS THIS ALSO SLOWER
 
 #ignore shifting of IOR arrays in trimats calc? 
 
@@ -401,37 +398,27 @@ class Prop3D:
         dy0 = ya_in[1]-ya_in[0]
 
         _power = overlap(u,u)
-        print('initial power: ',_power)
+        print('input power: ',_power)
 
-        print("normalizing input file")
+        # normalize the field, preserving the input power. accounts for grid resolution
         normalize(u,weight=dx0*dy0,normval=_power)
 
-        print('power check: ',overlap(u,u,dx0*dy0))
-        
         __z = 0
 
         #pull xy mesh
         xy = mesh.xy
         dx,dy = xy.dx0,xy.dy0
 
-        #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone!)
+        #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
         u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
 
-        print("starting field phase, resampled")
-        plt.imshow(np.arctan2(np.imag(u0),np.real(u0)))
-        plt.show()
-
         _power2 = overlap(u0,u0,dx*dy)
-        print("power inside computation zone: ",_power2)
 
         #now we pad w/ zeros to extend it into the PML zone
         u0 = np.pad(u0,((PML,PML),(PML,PML)))
 
         #initial mesh refinement
-        print("initial remesh")
         xy.refine_base(u0,ucrit)
-
-        #xy.plot_mesh(4)
 
         weights = xy.get_weights()
 
@@ -441,8 +428,6 @@ class Prop3D:
 
         #do another norm to correct for the slight power change you get when resampling. I measure 0.1% change for psflo. should check again
         norm_nonu(u,weights,_power2)
-
-        print("power of nonuniform field: ",overlap_nonu(u,u,weights))
 
         counter = 0
         total_iters = self.mesh.zres
@@ -471,14 +456,9 @@ class Prop3D:
         #get the current IOR dist
         self.set_IORsq(IORsq__,z__)
 
-        '''
-        plt.imshow(IORsq__)
-        plt.show()
-
-        IOR0 = xy.get_base_field(IORsq__)
-        plt.imshow(IOR0)
-        plt.show()
-        '''
+        #plt.figure(frameon=False)
+        #plt.imshow(xy.get_base_field(IORsq__))
+        #plt.show()
 
         print("initial shape: ",xy.shape)
         for i in range(total_iters):       
@@ -509,12 +489,7 @@ class Prop3D:
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
-                #plt.imshow(np.abs(u0),extent=(-38,38,-38,38))
-                #plt.show()
-                #IOR0 = xy.get_base_field(IORsq__)
-                #plt.imshow(IOR0)
-                #plt.show()
-                #xy.plot_mesh(4)
+
                 ## update the effective index
                 if dynamic_n0:
                     #update the effective index
@@ -598,36 +573,6 @@ class Prop3D:
             if (i+2)%remesh_every != 0:
                 IORsq__[:,:] = __IORsq
   
-
-            '''
-            if i%1000==0: 
-                print(z__,self.totalpower[i])
-
-                plt.imshow(IORsq__)
-                plt.show()
-
-                IOR0 = xy.get_base_field(IORsq__)
-                plt.imshow(IOR0)
-                plt.show()
-
-                plt.imshow(np.abs(u0))
-                plt.show()
-            '''
-
-        '''
-        plt.imshow(IORsq__)
-        plt.show()
-
-        IOR0 = xy.get_base_field(IORsq__)
-        plt.imshow(IOR0)
-        plt.show()
-
-        plt.imshow(np.abs(u))
-        plt.show()
-
-        plt.imshow(np.abs(u0))
-        plt.show()
-        '''
         print("final total power",self.totalpower[-1])
         
         if writeto:

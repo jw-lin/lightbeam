@@ -1,6 +1,8 @@
 import numpy as np
 from numpy import logical_and as AND, logical_not as NOT
 from bisect import bisect_left,bisect_right
+
+from numpy import core
 import geom
 from typing import List
 from mesh import RectMesh2D
@@ -220,37 +222,69 @@ class lant3_ms(OpticSys):
         core2 = scaled_cyl([np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core2,core1,core0]
-        
         super().__init__(elmnts,njack)
 
-class lant6_ms(OpticSys):
-    '''6 port lantern, central core and outer are different sizes'''
-    def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
+class lant6_saval(OpticSys):
+    '''6 port lantern, mode-selective, based off sergio leon-saval's paper'''
+    def __init__(self,rcore0,rcore1,rcore2,rcore3,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         
         t = 2*np.pi/5
 
-        core0 = scaled_cyl([0,0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core0 = scaled_cyl([0,0],rcore0,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         
-        core1 = scaled_cyl([offset0,0],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core2 = scaled_cyl([offset0*np.cos(t),offset0*np.sin(t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([offset0,0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([offset0*np.cos(t),offset0*np.sin(t)],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         core3 = scaled_cyl([offset0*np.cos(2*t),offset0*np.sin(2*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         core4 = scaled_cyl([offset0*np.cos(3*t),offset0*np.sin(3*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core5 = scaled_cyl([offset0*np.cos(4*t),offset0*np.sin(4*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core5 = scaled_cyl([offset0*np.cos(4*t),offset0*np.sin(4*t)],rcore3,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core5,core4,core3,core2,core1,core0]
         
         super().__init__(elmnts,njack)
 
-class lant5_ms(OpticSys):
-    '''5 port lantern, mode selective'''
-    def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
-        core0 = scaled_cyl([0,0],rcore1,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
-        core1 = scaled_cyl([offset0,0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
-        core2 = scaled_cyl([0,offset0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
-        core3 = scaled_cyl([-offset0,0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
-        core4 = scaled_cyl([0,-offset0],rcore2,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
-        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,scale_func=scale_func,final_scale=final_scale)
-        elmnts = [clad,core4,core3,core2,core1,core0]
+class lant19(OpticSys):
+    '''19 port lantern, with cores hexagonally packed'''
+
+    def __init__(self,rcore,rclad,ncore,nclad,njack,core_spacing,z_ex,z_offset=0,scale_func=None,final_scale=1):
         
+        core_locs = self.get_19port_positions(core_spacing)
+        self.core_locs = core_locs
+        clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
+        elmnts = [clad]
+
+        for loc in core_locs:
+            core = scaled_cyl(loc,rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+            elmnts.append(core)
         super().__init__(elmnts,njack)
+        
+    @staticmethod
+    def get_19port_positions(core_spacing,plot=False):
+        pos= [[0,0]]
+
+        for i in range(6):
+            xpos = core_spacing*np.cos(i*np.pi/3)
+            ypos = core_spacing*np.sin(i*np.pi/3)
+            pos.append([xpos,ypos])
+        
+        startpos = np.array([2*core_spacing,0])
+        startang = 2*np.pi/3
+        pos.append(startpos)
+        for i in range(11):
+            if i%2==0 and i!=0:
+                startang += np.pi/3
+            nextpos = startpos + np.array([core_spacing*np.cos(startang),core_spacing*np.sin(startang)])
+            pos.append(nextpos)
+            startpos = nextpos
+
+        pos = np.array(pos)
+        if not plot:
+            return pos
+        
+        import matplotlib.pyplot as plt
+
+        for p in pos:
+            plt.plot(*p,marker='.',ms=10,color='k')
+        
+        plt.axis('equal')
+        plt.show()
