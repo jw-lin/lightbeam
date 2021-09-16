@@ -230,7 +230,7 @@ class lant3big(OpticSys):
         super().__init__(elmnts,njack)
 
 class lant3_ms(OpticSys):
-    '''3 port lantern, infinite jacket, one core is bigger than the rest'''
+    '''3 port lantern, infinite jacket, one core is bigger than the rest to accept LP01 mode.'''
     def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,offset0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         core1 = scaled_cyl([-np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
