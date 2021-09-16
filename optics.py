@@ -183,7 +183,7 @@ class OpticSys(OpticPrim):
             elmnt.set_sampling(xymesh)
 
     def set_IORsq(self,out,z,xg=None,yg=None,coeff=1):
-        '''replace values of out with IOR^2, given coordinate grids xg, yg, and z location'''
+        '''replace values of out with IOR^2, given coordinate grids xg, yg, and z location.'''
         xg = self.xymesh.xg if xg is None else xg
         yg = self.xymesh.yg if yg is None else yg
         bbox,bboxh = self.bbox_idx(z)
