@@ -25,13 +25,13 @@ xw0 = 128 # simulation zone x width (um)
 yw0 = 128 # simulation zone y width (um)
 zw = zex
 ds = 1 # base grid resolution (um)
-dz = 3 # z stepping resolution (um)
+dz = 1 # z stepping resolution (um)
 
 #############################
 ## mesh refinement options ##
 #############################
 
-ucrit = 8.e-7 # controls adaptive meshing. lower -> more careful
+ucrit = 6.e-7 # controls adaptive meshing. lower -> more careful
 remesh_every = 20 # how many z-steps to go before recomputing the adaptive mesh
 max_remesh_iters = 6 # maximum amount of subdivisions when computing the adaptive mesh
 

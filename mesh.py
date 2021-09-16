@@ -175,18 +175,18 @@ class RectMesh2D:
         return reals+1.j*imags
 
     def plot_mesh(self,reduce_by = 1,show=True):
-        i = 0
+        i=0
         for x in self.xa:
             if i%reduce_by == 0:
-                plt.axhline(y=x,color='white',lw=0.5,alpha=0.5)
+                plt.axhline(y=x,color='k',lw=0.5,alpha=0.5)
             i+=1
         i=0
         for y in self.ya:
             if i%reduce_by == 0:
-                plt.axvline(x=y,color='white',lw=0.5,alpha=0.5)
+                plt.axvline(x=y,color='k',lw=0.5,alpha=0.5)
             i+=1
         if show:
-            plt.axes().set_aspect('equal')
+            plt.axis('equal')
             plt.show()
     
     def get_base_field(self,u):

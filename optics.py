@@ -54,9 +54,6 @@ class OpticPrim:
     
     def set_sampling(self,xymesh:RectMesh2D):
         self.xymesh = xymesh
-    
-    def IOR_sq(self,out,z,xg,yg,min_ds):
-        pass
 
     def set_IORsq(self,out,z,coeff=1):
         ''' replace values of out with IOR^2, given coordinate grids xg, yg, and z location. 
@@ -85,6 +82,24 @@ class OpticPrim:
 class scaled_cyl(OpticPrim):
     ''' cylinder whose offset from origin and radius scale in the same way'''
     def __init__(self,xy,r,z_ex,n,nb,z_offset=0,scale_func=None,final_scale=1):
+        ''' Initialize a scaled cylinder, where the cross-sectional geometry along the object's 
+            length is a scaled version of the initial geometry. 
+
+            Args:
+            xy -- RectMesh2D object which sets transverse sampling.
+            r -- initial cylinder radius
+            z_ex -- cylinder length
+            n -- refractive index of cylinder
+            nb -- background index (required for anti-aliasing)
+
+            z_offset -- offset that sets the z-coord for the cylinder's front
+            scale_func -- optional custom function. Should take in z and return a scale value. 
+                          set to None to use a linear scale function, where the scale factor 
+                          of the back end is set by ...
+            final_scale -- the scale of the final cross-section geometry, 
+                           relative to the initial geoemtry.
+        '''
+
         super().__init__(n)
         self.p1 = p1 = [xy[0],xy[1],z_offset]
         self.p2 = [p1[0]*final_scale,p1[1]*final_scale,z_ex+z_offset]
@@ -127,7 +142,7 @@ class scaled_cyl(OpticPrim):
         return (xmin,xmax,ymin,ymax)
     
     def set_IORsq(self,out,z,coeff=1):
-        '''anti-aliased to improve convergence'''
+        '''overwrite base function to incorporate anti-aliasing and improve convergence'''
         if not (self.z_offset <= z <= self.z_offset+self.z_ex):
             return
 
@@ -191,7 +206,7 @@ class lant5(OpticSys):
         super().__init__(elmnts,nb)
 
 class lant5big(OpticSys):
-    '''corrigan et al. 2018 style photonic lantern except the jacket is fkin huge (as in infinite)'''
+    '''corrigan et al. 2018 style photonic lantern except the jacket is infinite'''
     def __init__(self,rcore,rclad,ncore,nclad,njack,offset0,z_ex,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
         core1 = scaled_cyl([offset0,0],rcore,z_ex,ncore,nclad,scale_func=scale_func,final_scale=final_scale)
