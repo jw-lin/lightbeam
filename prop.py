@@ -10,9 +10,6 @@ from mesh import RectMesh3D,RectMesh2D
 import optics
 from misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu,resize
 
-import matplotlib.pyplot as plt
-plt.style.use('dark_background')
-
 ### to do ###
 
 ## performance
@@ -373,7 +370,7 @@ class Prop3D:
             _c[ix] = self._cpmly[:,None]
 
     @timeit 
-    def prop2end(self,u,xyslice=None,zslice=None,u1_func=None,writeto=None,ucrit=5.e-3,remesh_every=20,dynamic_n0 = True,fplanewidth=0):
+    def prop2end(self,_u,xyslice=None,zslice=None,u1_func=None,writeto=None,ref_val=5.e-6,remesh_every=20,dynamic_n0 = False,fplanewidth=0):
         mesh = self.mesh
         PML = mesh.PML
 
@@ -387,53 +384,78 @@ class Prop3D:
             
             self.field = np.zeros(shape,dtype=c128)
 
-        if fplanewidth == 0:
-            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,u.shape[0])
-            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,u.shape[1])
-        else:
-            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
-            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
-
-        dx0 = xa_in[1]-xa_in[0]
-        dy0 = ya_in[1]-ya_in[0]
-
-        _power = overlap(u,u)
-        print('input power: ',_power)
-
-        # normalize the field, preserving the input power. accounts for grid resolution
-        normalize(u,weight=dx0*dy0,normval=_power)
-
-        __z = 0
-
         #pull xy mesh
         xy = mesh.xy
         dx,dy = xy.dx0,xy.dy0
 
-        #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
-        u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
 
-        _power2 = overlap(u0,u0,dx*dy)
+        if fplanewidth == 0:
+            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,xy.shape0_comp[0])
+            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,xy.shape0_comp[1])
+        else:
+            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[0])
+            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[1])
 
-        #now we pad w/ zeros to extend it into the PML zone
-        u0 = np.pad(u0,((PML,PML),(PML,PML)))
+        dx0 = xa_in[1]-xa_in[0]
+        dy0 = ya_in[1]-ya_in[0]
 
-        #initial mesh refinement
-        xy.refine_base(u0,ucrit)
+        # u can either be a field or a function that generates a field.
+        # the latter option allows for coarse base grids to be used 
+        # without being penalized by forcing the use of a low resolution
+        # launch field
 
-        weights = xy.get_weights()
+        if type(_u) is np.ndarray:
 
-        #now resample the field onto the smaller *non-uniform* xy mesh
-        u = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
-        u = np.pad(u,((PML,PML),(PML,PML)))
+            _power = overlap(_u,_u)
+            print('input power: ',_power)
 
-        #do another norm to correct for the slight power change you get when resampling. I measure 0.1% change for psflo. should check again
-        norm_nonu(u,weights,_power2)
+            # normalize the field, preserving the input power. accounts for grid resolution
+            normalize(_u,weight=dx0*dy0,normval=_power)
+
+            #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
+            u0 = xy.resample_complex(_u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
+
+            _power2 = overlap(u0,u0,dx*dy)
+
+            #now we pad w/ zeros to extend it into the PML zone
+            u0 = np.pad(u0,((PML,PML),(PML,PML)))
+
+            #initial mesh refinement
+            xy.refine_base(u0,ref_val)
+
+            weights = xy.get_weights()
+
+            #now resample the field onto the smaller *non-uniform* xy mesh
+            u = xy.resample_complex(_u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
+            u = np.pad(u,((PML,PML),(PML,PML)))
+
+            #do another norm to correct for the slight power change you get when resampling. I measure 0.1% change for psflo. should check again
+            norm_nonu(u,weights,_power2)
+        
+        elif callable(_u):
+            # must be of the form u(x,y)
+            u0 = _u(xy.xg,xy.yg)
+            _power = overlap(u0,u0)
+            print('input power: ',_power)
+            
+            # normalize the field, preserving the input power. accounts for grid resolution
+            normalize(u0,weight=dx0*dy0,normval=_power)
+
+            # do an initial mesh refinement
+            xy.refine_base(u0,ref_val)
+
+            # compute the field on the nonuniform grid
+            u = norm_nonu(_u(xy.xg,xy.yg),xy.get_weights(),_power)
+
+        else:
+            raise Exception("unsupported type for argument u in prop2end()")
 
         counter = 0
         total_iters = self.mesh.zres
 
         print("propagating field...")
-
+        
+        __z = 0
         z__ = 0
 
         #step 0 setup
@@ -525,7 +547,7 @@ class Prop3D:
                     xy.ya_last = np.hstack( ( np.linspace(xy.ym,oldym-dy,ypad) , xy.ya_last , np.linspace(oldyM + dy, xy.yM,ypad) ) )
                    
                 #subdivide into nonuniform grid
-                xy.refine_base(u0,ucrit)
+                xy.refine_base(u0,ref_val)
 
                 #interp the field to the new grid   
                 u = xy.resample_complex(u)
@@ -579,4 +601,125 @@ class Prop3D:
             np.save(writeto,self.field)
         return u,u0
 
+    @timeit 
+    def prop2end_uniform(self,u,xyslice=None,zslice=None,u1_func=None,writeto=None,dynamic_n0 = False,fplanewidth=0):
+        mesh = self.mesh
+        PML = mesh.PML
 
+        if not (xyslice is None and zslice is None):
+            za_keep = mesh.za[zslice]
+            if type(za_keep) == np.ndarray:
+                minz, maxz = za_keep[0],za_keep[-1]
+                shape = (len(za_keep),*mesh.xg[xyslice].shape)
+            else:
+                raise Exception('uhh not implemented')
+            
+            self.field = np.zeros(shape,dtype=c128)
+
+        if fplanewidth == 0:
+            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,u.shape[0])
+            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,u.shape[1])
+        else:
+            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
+            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
+
+        dx0 = xa_in[1]-xa_in[0]
+        dy0 = ya_in[1]-ya_in[0]
+
+        _power = overlap(u,u)
+        print('input power: ',_power)
+
+        # normalize the field, preserving the input power. accounts for grid resolution
+        normalize(u,weight=dx0*dy0,normval=_power)
+
+        __z = 0
+
+        #pull xy mesh
+        xy = mesh.xy
+        dx,dy = xy.dx0,xy.dy0
+
+        #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
+        u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
+
+        _power2 = overlap(u0,u0,dx*dy)
+
+        #now we pad w/ zeros to extend it into the PML zone
+        u0 = np.pad(u0,((PML,PML),(PML,PML)))
+
+
+        counter = 0
+        total_iters = self.mesh.zres
+
+        print("propagating field...")
+
+        z__ = 0
+
+        #step 0 setup
+
+        self.update_grid_cor_facs('x')
+        self.update_grid_cor_facs('y')
+
+        # initial array allocation
+        _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq = self.allocate_mats()
+
+        self.precomp_trimats('x')
+        self.precomp_trimats('y')
+
+        self.rmat_precomp('x')
+        self.rmat_precomp('y')
+
+        self._pmlcorrect(_trimatsx,'x')
+        self._pmlcorrect(_trimatsy,'y')
+
+        #get the current IOR dist
+        self.set_IORsq(IORsq__,z__)
+
+        weights = xy.get_weights()
+
+        print("initial shape: ",xy.shape)
+        for i in range(total_iters):       
+            if i%20 == 0: 
+                printProgressBar(i,total_iters-1)
+
+            ## Total power monitor ##
+            self.totalpower[i] = overlap_nonu(u0,u0,weights)
+
+            ## Other monitors ##
+            if u1_func is not None:
+                lp = norm_nonu(u1_func(xy.xg,xy.yg),weights)
+                self.power[i] = power(overlap_nonu(u0,lp,weights),2)
+
+            _z_ = z__ + mesh.half_dz
+            __z = z__ + mesh.dz
+            
+            if self.field is not None and (minz<=__z<=maxz):
+                ix0,ix1,ix2,ix3 = mesh.get_loc() 
+                mid = int(u0.shape[1]/2)
+
+                self.field[counter][ix0:ix1+1] = u0[:,mid] ## FIX ##
+                counter+=1
+
+            self.set_IORsq(_IORsq_,_z_,)
+            self.set_IORsq(__IORsq,__z)
+
+            self.rmat(rmatx,u0,IORsq__,'x')
+            self.rmat_pmlcorrect(rmatx,u0,'x')
+
+            self._trimats(_trimatsx,_IORsq_,'x')
+            self._trimats(_trimatsy,__IORsq.T,'y')
+
+            tri_solve_vec(_trimatsx[0],_trimatsx[1],_trimatsx[2],rmatx,gx,u0)
+
+            self.rmat(rmaty,u0.T,_IORsq_.T,'y')
+            self.rmat_pmlcorrect(rmaty,u0.T,'y')
+
+            tri_solve_vec(_trimatsy[0],_trimatsy[1],_trimatsy[2],rmaty,gy,u0.T)
+
+            z__ = __z
+            IORsq__[:,:] = __IORsq
+  
+        print("final total power",self.totalpower[-1])
+        
+        if writeto:
+            np.save(writeto,self.field)
+        return u0
