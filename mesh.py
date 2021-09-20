@@ -27,6 +27,9 @@ class RectMesh2D:
         self.xa = None
         self.ya = None
 
+        self.xg = None
+        self.yg = None
+
         self.ccel_ix = np.s_[Nbc+2:-Nbc-2]
 
         ###??? idk why these have to overlap but the pml doesn't work any other way
@@ -192,41 +195,60 @@ class RectMesh2D:
     def get_base_field(self,u):
         return u[self.xix_base].T[self.yix_base].T
 
+    def _compute_refinement_factor(self,u0,crit_val):
+        ''' given some electric field u0, compute values that corresponds to the degree of refinement required
+            in the x and y subdivisions in the field. larger refinement factors should imply more grid refinement. 
+            crit_val determines the normalization of this refinement factor - this is left as an argument
+            to allow the degree of mesh subdivision to be controlled. note that the output refinement factors,
+            _rx and _ry, essentially will act as booleans. wherever these factors are larger than 1, the grid will
+            marked for subdivision.
+        '''
+        
+        # the default scheme presented here sets the refinement factor to the geometric mean of field amplitude and 
+        # field second derivative magnitude. convergence testing shows that this metric leads to faster convergence 
+        # over using just field amplitude or second derivative magnitude alone. 
+        # evidence for this is entirely empirical and comes from testing that is not 100% comprehensive.
+
+        ix = self.ccel_ix
+
+        # x second derivative estimation
+        xdif2 = np.empty_like(u0,dtype=np.complex128)
+        xdif2[1:-1] = u0[2:]+u0[:-2] - 2*u0[1:-1]
+        xdif2[0] = xdif2[-1] = 0
+
+        # y second derivative estimation
+        ydif2 = np.empty_like(u0,dtype=np.complex128)
+        ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2*u0[:,1:-1]
+
+        ydif2[:,0] = ydif2[:,-1] = 0
+
+        # field amps
+        umaxx = np.sqrt(np.max(np.abs(u0),axis=1) * np.max(np.abs(xdif2),axis=1))
+        umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
+
+        umaxy = np.sqrt(np.max(np.abs(u0),axis=0) * np.max(np.abs(ydif2),axis=0))
+        umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
+
+        _rx = umaxx[ix]*self.dxa[1:][ix]/crit_val
+        _ry = umaxy[ix]*self.dya[1:][ix]/crit_val
+
+        return _rx,_ry
+
+
     def refine_by_two(self,u0,crit_val):
         ''' uses a hybrid approach where cells tagged are based on the product of field amplitude
             and second derivative magnitude '''
 
         ix = self.ccel_ix
 
-        xdif2 = np.empty_like(u0,dtype=np.complex128)
-        xdif2[1:-1] = u0[2:]+u0[:-2] - 2*u0[1:-1]
+        _rx,_ry = self._compute_refinement_factor(u0,crit_val)
 
-        xdif2[0] = xdif2[-1] = 0
+        rfacxa = np.full(u0.shape[0]-1,1,dtype=int)
+        rfacya = np.full(u0.shape[1]-1,1,dtype=int)
 
-        ydif2 = np.empty_like(u0,dtype=np.complex128)
-        ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2*u0[:,1:-1]
-
-        ydif2[:,0] = ydif2[:,-1] = 0
-
-        umaxx = np.max(np.abs(xdif2),axis=1)*np.max(np.abs(u0),axis=1)
-        umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
-
-        #out = np.abs(xdif2) * np.abs(u0)
-        #plt.imshow(out,vmax=1e-4)
-        #plt.show()
-
-        umaxy = np.max(np.abs(ydif2),axis=0)*np.max(np.abs(u0),axis=0)
-        umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
-
-        #print("dxa: ",self.dxa.shape)
-        rfacxa = np.full_like(umaxx,1,dtype=int)
-        _rx = umaxx[ix]*self.dxa[1:][ix]/crit_val
-    
         mask = (_rx>1)
         rfacxa[ix][mask] = 2
 
-        rfacya = np.full_like(umaxy,1,dtype=int)
-        _ry = umaxy[ix]*self.dya[1:][ix]/crit_val
         mask = (_ry>1)
         rfacya[ix][mask] = 2
 
@@ -238,6 +260,7 @@ class RectMesh2D:
         return self.resample_complex(u0,xa_old,ya_old,self.xa,self.ya)
 
     def refine_base(self,u0,ucrit):
+        ''' iteratively apply refine_by_two to fully subdivide the simulation grid. '''
         for i in range(self.max_iters):
             u0 = self.refine_by_two(u0,ucrit)
 
