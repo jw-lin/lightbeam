@@ -31,8 +31,8 @@ dz = 1 # z stepping resolution (um)
 ## mesh refinement options ##
 #############################
 
-ucrit = 6.e-7 # controls adaptive meshing. lower -> more careful
-remesh_every = 20 # how many z-steps to go before recomputing the adaptive mesh
+ref_val = 1e-4 # controls adaptive meshing. lower -> more careful
+remesh_every = 50 # how many z-steps to go before recomputing the adaptive mesh
 max_remesh_iters = 6 # maximum amount of subdivisions when computing the adaptive mesh
 
 xw_func = None # optional functions which allow the simulation zone to "grow" with z, which may save on computation time
