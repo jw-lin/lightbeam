@@ -20,7 +20,7 @@ class RectMesh2D:
 
     def __init__(self,xw,yw,dx,dy,Nbc=4):
 
-        self.max_iters = 8
+        self.max_iters = 6
         self.Nbc = Nbc
         self.dx0,self.dy0 = dx,dy
 
