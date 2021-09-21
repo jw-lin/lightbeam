@@ -86,7 +86,7 @@ class scaled_cyl(OpticPrim):
             length is a scaled version of the initial geometry. 
 
             Args:
-            xy -- RectMesh2D object which sets transverse sampling.
+            xy -- Initial location of the center of the cylinder at z=0.
             r -- initial cylinder radius
             z_ex -- cylinder length
             n -- refractive index of cylinder
@@ -228,6 +228,9 @@ class lant3big(OpticSys):
         elmnts = [clad,core2,core1,core0]
         
         super().__init__(elmnts,njack)
+
+        self.init_core_locs = np.array([[0,offset0],[-np.sqrt(3)/2*offset0,-offset0/2],[np.sqrt(3)/2*offset0,-offset0/2]])
+        self.final_core_locs = self.init_core_locs*final_scale
 
 class lant3_ms(OpticSys):
     '''3 port lantern, infinite jacket, one core is bigger than the rest to accept LP01 mode.'''
