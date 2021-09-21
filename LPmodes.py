@@ -194,7 +194,6 @@ def get_all_bs(l, V,bmax):
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
-    plt.style.use("dark_background")
     rcore = 21.8/2
     ncore = 1.4504
     nclad = 1.4504 - 5.5e-3
