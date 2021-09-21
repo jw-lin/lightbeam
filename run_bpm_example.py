@@ -24,7 +24,7 @@ if __name__ == "__main__":
     plt.show()
 
     # run the propagator (required)
-    u,u0 = prop.prop2end(u0,xyslice=None,zslice=None,u1_func = u1_func,writeto=writeto,ucrit=ucrit,remesh_every=remesh_every,dynamic_n0=dynamic_n0,fplanewidth=fplanewidth)
+    u,u0 = prop.prop2end(u0,xyslice=None,zslice=None,u1_func = u1_func,writeto=writeto,ref_val=ref_val,remesh_every=remesh_every,dynamic_n0=dynamic_n0,fplanewidth=fplanewidth)
 
     # compute power in output ports (optional)
 
