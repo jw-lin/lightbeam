@@ -5,12 +5,11 @@ import matplotlib.pyplot as plt
 from misc import normalize,resize,printProgressBar,resize2,overlap
 from os import path
 import time
-import LPmodes
+import lightbeam.LPmodes as LPmodes
 import h5py
 import screen
 from astropy.io import fits
-import PIAA
-import PIAA_raytrace as RTPIAA
+import lightbeam.PIAA as PIAA
 import zernike as zk
 
 def get_u(wf:hc.Wavefront):
@@ -224,10 +223,7 @@ class AOtele:
 
         if mode == "FR":
             self.apodize,self.apodize_backwards = PIAA.fresnel_apodizer(collimator_grid,beam_radius,sep,r1,r2,z1,z2,IOR,IOR)
-        elif mode == "RT":
-            self.apodize = RTPIAA.RT_apodize(r1,r2,z1,z2,IOR,IOR,sep,self.reference_wavelength,nres=self.hi_pupil_res,ret_wf=True)
-        else:
-            self.apodize = RTPIAA.remap_apodize(r1,r2,inner,outer,beam_radius,res)
+
         print("PIAA setup complete")
 
     def init_PIAA_LP0m(self,m,beam_radius,lens_sep,rcore,ncore,nclad,wl=None,IOR=1.48,inner_trunc=0.0,outer_trunc=-1.0,use_RT=False):
@@ -255,8 +251,7 @@ class AOtele:
         
         if not use_RT:
             self.apodize,self.apodize_backwards = PIAA.fresnel_apodizer(collimator_grid,beam_radius,lens_sep,r1,r2,z1,z2,IOR,IOR)
-        else:
-            self.apodize = RTPIAA.RT_apodize(r1,r2,z1,z2,IOR,IOR,lens_sep,wl,nres=self.hi_pupil_res,ret_wf=True,nlaunch=2048)
+
         print("PIAA setup complete")
 
     def gen_wf(self,wl=None):

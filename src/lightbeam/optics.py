@@ -1,11 +1,9 @@
 import numpy as np
 from numpy import logical_and as AND, logical_not as NOT
 from bisect import bisect_left,bisect_right
-
-from numpy import core
-import geom
+import lightbeam.geom as geom
 from typing import List
-from mesh import RectMesh2D
+from lightbeam.mesh import RectMesh2D
 
 ### to do
 
