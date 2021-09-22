@@ -57,17 +57,17 @@ def tri_solve_vec(a,b,c,r,g,u):
 
 class Prop3D:
     '''beam propagator. employs finite-differences beam propagation with PML as the boundary condition. works on an adaptive mesh'''
-    def __init__(self,wl0,mesh:RectMesh3D,optical_system:optics.OpticSys,n0):
+    def __init__(self,wl0,_mesh:RectMesh3D,optical_system:optics.OpticSys,n0):
         
-        xymesh = mesh.xy
+        xymesh = _mesh.xy
 
         self.wl0 = wl0
         self.k0 = k0 = 2.*pi/wl0
         self.k02 = k02 = k0*k0
-        self.mesh = mesh
+        self._mesh = _mesh
         self.n0 = n0
 
-        self.sig = sig = -2.j*k0*n0/mesh.dz
+        self.sig = sig = -2.j*k0*n0/_mesh.dz
 
         self.field = None
 
@@ -88,8 +88,8 @@ class Prop3D:
 
         Rx,Tupx,Tdox,Ry,Tupy,Tdoy = self.calculate_PML_mats()   
 
-        dx02 = mesh.xy.dx0**2
-        dy02 = mesh.xy.dy0**2
+        dx02 = _mesh.xy.dx0**2
+        dy02 = _mesh.xy.dy0**2
 
         K = k02*(nb2-n02)
         n02 = power(n0,2)
@@ -128,13 +128,13 @@ class Prop3D:
         self.bpmly_ = 5./6.*sig - Ry/dy02 + 5./24. * K
         self.cpmly_ = sig/12. + 0.5/dy02*Tupy + K/48.
         
-        self.half_dz = mesh.dz/2.
+        self.half_dz = _mesh.dz/2.
 
-        self.power = np.empty((mesh.zres,))
-        self.totalpower = np.empty((mesh.zres,))
+        self.power = np.empty((_mesh.zres,))
+        self.totalpower = np.empty((_mesh.zres,))
 
     def allocate_mats(self):
-        sx,sy = self.mesh.xy.xg.shape,self.mesh.xy.yg.T.shape
+        sx,sy = self._mesh.xy.xg.shape,self._mesh.xy.yg.T.shape
         _trimatsx = (genc(sx),genc(sx),genc(sx))
         _trimatsy = (genc(sy),genc(sy),genc(sy))
 
@@ -163,7 +163,7 @@ class Prop3D:
         the PML's refractive index will be constant, equal to the background index.
         '''
 
-        m = self.mesh
+        m = self._mesh
         xy = m.xy
 
         xverts = xy.pvert_xa
@@ -196,7 +196,7 @@ class Prop3D:
         return (Rx,Tupx,Tdox,Ry,Tupy,Tdoy)
 
     def update_grid_cor_facs(self,which='x'):
-        xy = self.mesh.xy
+        xy = self._mesh.xy
         ix = xy.cvert_ix
         if which=='x':
             r = xy.rxa[ix]
@@ -226,7 +226,7 @@ class Prop3D:
             self.ygrid_cor_facs[2] = R3
 
     def precomp_trimats(self,which='x'):
-        ix = self.mesh.xy.cvert_ix
+        ix = self._mesh.xy.cvert_ix
         s = self.sig    
         nu0 = -self.k02*self.n02
 
@@ -236,15 +236,15 @@ class Prop3D:
 
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
+            r = self._mesh.xy.rxa[ix]
+            dla = self._mesh.xy.dxa[ix]
             self._a0x = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
             self._b0x = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
             self._c0x = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
         else:
             R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
+            r = self._mesh.xy.rya[ix]
+            dla = self._mesh.xy.dya[ix]
             self._a0y = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
             self._b0y = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
             self._c0y = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
@@ -252,19 +252,19 @@ class Prop3D:
     def _trimats(self,out,IORsq,which='x'):
         ''' calculate the tridiagonal matrices in the computational zone '''
 
-        ix = self.mesh.xy.cvert_ix
+        ix = self._mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
 
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
+            r = self._mesh.xy.rxa[ix]
+            dla = self._mesh.xy.dxa[ix]
             a,b,c = self._a0x,self._b0x,self._c0x
             
         else:
             R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
+            r = self._mesh.xy.rya[ix]
+            dla = self._mesh.xy.dya[ix]
             a,b,c = self._a0y,self._b0y,self._c0y
             
         _a,_b,_c = out
@@ -289,7 +289,7 @@ class Prop3D:
         else:
             apml,bpml,cpml = self.apmly_,self.bpmly_,self.cpmly_
 
-        pix = self.mesh.xy.pvert_ix
+        pix = self._mesh.xy.pvert_ix
 
         temp = np.empty_like(_rmat[pix])
 
@@ -301,19 +301,19 @@ class Prop3D:
         _rmat[pix] = temp
 
     def rmat(self,_rmat,u,IORsq,which='x'):
-        ix = self.mesh.xy.cvert_ix
+        ix = self._mesh.xy.cvert_ix
         _IORsq = IORsq[ix]
         s = self.sig
 
         if which == 'x':    
             R1,R2,R3 = self.xgrid_cor_facs
-            dla = self.mesh.xy.dxa[ix]
-            r = self.mesh.xy.rxa[ix]
+            dla = self._mesh.xy.dxa[ix]
+            r = self._mesh.xy.rxa[ix]
             a,b,c = self.a0x_,self.b0x_,self.c0x_
         else:
             R1,R2,R3 = self.ygrid_cor_facs
-            dla = self.mesh.xy.dya[ix]
-            r = self.mesh.xy.rya[ix]
+            dla = self._mesh.xy.dya[ix]
+            r = self._mesh.xy.rya[ix]
             a,b,c = self.a0y_,self.b0y_,self.c0y_
 
         N = self.n02*self.k02
@@ -328,7 +328,7 @@ class Prop3D:
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
 
     def rmat_precomp(self,which='x'):
-        ix = self.mesh.xy.cvert_ix
+        ix = self._mesh.xy.cvert_ix
         s = self.sig
         n0 = -self.k02 * self.n02
         m = np.s_[1:-1,None]
@@ -339,8 +339,8 @@ class Prop3D:
 
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
-            r = self.mesh.xy.rxa[ix]
-            dla = self.mesh.xy.dxa[ix]
+            r = self._mesh.xy.rxa[ix]
+            dla = self._mesh.xy.dxa[ix]
 
             _dict = {"s":s,"r3":R3[m],"r":r[m],"d":dla[m],"n":n0,"r2":R2[m],"r1":R1[m]}
             self.a0x_ = ne.evaluate(eval1,local_dict=_dict)
@@ -348,8 +348,8 @@ class Prop3D:
             self.c0x_ = ne.evaluate(eval3,local_dict=_dict)
         else:
             R1,R2,R3 = self.ygrid_cor_facs
-            r = self.mesh.xy.rya[ix]
-            dla = self.mesh.xy.dya[ix]
+            r = self._mesh.xy.rya[ix]
+            dla = self._mesh.xy.dya[ix]
 
             _dict = {"s":s,"r3":R3[m],"r":r[m],"d":dla[m],"n":n0,"r2":R2[m],"r1":R1[m]}
             self.a0y_ = ne.evaluate(eval1,local_dict=_dict)
@@ -357,7 +357,7 @@ class Prop3D:
             self.c0y_ = ne.evaluate(eval3,local_dict=_dict)
 
     def _pmlcorrect(self,_trimats,which='x'):
-        ix = self.mesh.xy.pvert_ix
+        ix = self._mesh.xy.pvert_ix
         _a,_b,_c = _trimats 
         
         if which=='x':
@@ -371,27 +371,27 @@ class Prop3D:
 
     @timeit 
     def prop2end(self,_u,xyslice=None,zslice=None,u1_func=None,writeto=None,ref_val=5.e-6,remesh_every=20,dynamic_n0 = False,fplanewidth=0):
-        mesh = self.mesh
-        PML = mesh.PML
+        _mesh = self._mesh
+        PML = _mesh.PML
 
         if not (xyslice is None and zslice is None):
-            za_keep = mesh.za[zslice]
+            za_keep = _mesh.za[zslice]
             if type(za_keep) == np.ndarray:
                 minz, maxz = za_keep[0],za_keep[-1]
-                shape = (len(za_keep),*mesh.xg[xyslice].shape)
+                shape = (len(za_keep),*_mesh.xg[xyslice].shape)
             else:
                 raise Exception('uhh not implemented')
             
             self.field = np.zeros(shape,dtype=c128)
 
         #pull xy mesh
-        xy = mesh.xy
+        xy = _mesh.xy
         dx,dy = xy.dx0,xy.dy0
 
 
         if fplanewidth == 0:
-            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,xy.shape0_comp[0])
-            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,xy.shape0_comp[1])
+            xa_in = np.linspace(-_mesh.xw/2,_mesh.xw/2,xy.shape0_comp[0])
+            ya_in = np.linspace(-_mesh.yw/2,_mesh.yw/2,xy.shape0_comp[1])
         else:
             xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[0])
             ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[1])
@@ -451,7 +451,7 @@ class Prop3D:
             raise Exception("unsupported type for argument u in prop2end()")
 
         counter = 0
-        total_iters = self.mesh.zres
+        total_iters = self._mesh.zres
 
         print("propagating field...")
         
@@ -499,11 +499,11 @@ class Prop3D:
                 lp = norm_nonu(u1_func(xy.xg,xy.yg),weights)
                 self.power[i] = power(overlap_nonu(u,lp,weights),2)
 
-            _z_ = z__ + mesh.half_dz
-            __z = z__ + mesh.dz
+            _z_ = z__ + _mesh.half_dz
+            __z = z__ + _mesh.dz
             
             if self.field is not None and (minz<=__z<=maxz):
-                ix0,ix1,ix2,ix3 = mesh.get_loc() 
+                ix0,ix1,ix2,ix3 = _mesh.get_loc() 
                 mid = int(u0.shape[1]/2)
 
                 self.field[counter][ix0:ix1+1] = u0[:,mid] ## FIX ##
@@ -525,10 +525,10 @@ class Prop3D:
 
                 new_xw,new_yw = oldxw,oldyw
                 #expand the grid if necessary
-                if mesh.xwfunc is not None:
-                    new_xw = mesh.xwfunc(__z)
-                if mesh.ywfunc is not None:
-                    new_yw = mesh.ywfunc(__z)
+                if _mesh.xwfunc is not None:
+                    new_xw = _mesh.xwfunc(__z)
+                if _mesh.ywfunc is not None:
+                    new_yw = _mesh.ywfunc(__z)
 
                 new_xw, new_yw = xy.snapto(new_xw,new_yw)
 
@@ -603,22 +603,22 @@ class Prop3D:
 
     @timeit 
     def prop2end_uniform(self,u,xyslice=None,zslice=None,u1_func=None,writeto=None,dynamic_n0 = False,fplanewidth=0):
-        mesh = self.mesh
-        PML = mesh.PML
+        _mesh = self._mesh
+        PML = _mesh.PML
 
         if not (xyslice is None and zslice is None):
-            za_keep = mesh.za[zslice]
+            za_keep = _mesh.za[zslice]
             if type(za_keep) == np.ndarray:
                 minz, maxz = za_keep[0],za_keep[-1]
-                shape = (len(za_keep),*mesh.xg[xyslice].shape)
+                shape = (len(za_keep),*_mesh.xg[xyslice].shape)
             else:
                 raise Exception('uhh not implemented')
             
             self.field = np.zeros(shape,dtype=c128)
 
         if fplanewidth == 0:
-            xa_in = np.linspace(-mesh.xw/2,mesh.xw/2,u.shape[0])
-            ya_in = np.linspace(-mesh.yw/2,mesh.yw/2,u.shape[1])
+            xa_in = np.linspace(-_mesh.xw/2,_mesh.xw/2,u.shape[0])
+            ya_in = np.linspace(-_mesh.yw/2,_mesh.yw/2,u.shape[1])
         else:
             xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
             ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
@@ -635,7 +635,7 @@ class Prop3D:
         __z = 0
 
         #pull xy mesh
-        xy = mesh.xy
+        xy = _mesh.xy
         dx,dy = xy.dx0,xy.dy0
 
         #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
@@ -648,7 +648,7 @@ class Prop3D:
 
 
         counter = 0
-        total_iters = self.mesh.zres
+        total_iters = self._mesh.zres
 
         print("propagating field...")
 
@@ -689,11 +689,11 @@ class Prop3D:
                 lp = norm_nonu(u1_func(xy.xg,xy.yg),weights)
                 self.power[i] = power(overlap_nonu(u0,lp,weights),2)
 
-            _z_ = z__ + mesh.half_dz
-            __z = z__ + mesh.dz
+            _z_ = z__ + _mesh.half_dz
+            __z = z__ + _mesh.dz
             
             if self.field is not None and (minz<=__z<=maxz):
-                ix0,ix1,ix2,ix3 = mesh.get_loc() 
+                ix0,ix1,ix2,ix3 = _mesh.get_loc() 
                 mid = int(u0.shape[1]/2)
 
                 self.field[counter][ix0:ix1+1] = u0[:,mid] ## FIX ##
