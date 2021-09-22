@@ -7,7 +7,7 @@ os.environ['NUMEXPR_MAX_THREADS'] = '16'
 os.environ['NUMEXPR_NUM_THREADS'] = '8'
 import numexpr as ne
 from lightbeam.mesh import RectMesh3D,RectMesh2D
-import optics
+import lightbeam.optics as optics
 from misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu,resize
 
 ### to do ###
