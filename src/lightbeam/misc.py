@@ -4,7 +4,6 @@ import numpy as np
 from bisect import bisect_left
 import time
 from scipy.interpolate import RectBivariateSpline
-import cv2
 
 def getslices(bounds,arr):
     '''given a range, get the idxs corresponding to that range in the sorted array arr '''
@@ -16,17 +15,6 @@ def getslices(bounds,arr):
         return np.s_[bisect_left(arr,bounds[0]):bisect_left(arr,bounds[1])+1]
     else:
         raise Exception("malformed bounds input in getslices(); check savex,savey,savez in config.py")
-
-def resize(u0,shape):
-    '''resample a complex-valued array'''
-    if u0.dtype == np.complex:
-        ur = np.real(u0)
-        ui = np.imag(u0)
-        ur = cv2.resize(ur,shape)
-        ui = cv2.resize(ui,shape)
-        return ur+1.j*ui
-    else:
-        return cv2.resize(u0,shape)
 
 def resize2(image,newshape):
     '''another resampling function that uses scipy, not cv2'''
