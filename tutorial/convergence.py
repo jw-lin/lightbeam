@@ -2,11 +2,31 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-import optics
-from mesh import RectMesh3D
-import LPmodes
-from misc import norm_nonu, normalize, overlap_nonu
-from prop import Prop3D
+from lightbeam import optics,LPmodes
+from lightbeam.mesh import RectMesh3D
+from lightbeam.misc import norm_nonu,normalize,overlap_nonu
+from lightbeam.prop import Prop3D
+
+
+from scipy.optimize import curve_fit
+outs = np.load('tutorial/convergence.npy')
+outs = np.vstack( (outs, np.array([0.30718035, 0.53222632, 0.14978008])))
+times = np.array([45,67,99,236,665,2842,14447])
+
+diffs = np.sqrt(np.sum(np.power(outs[:-1,:] - outs[-1,:],2),axis=1))
+
+f = lambda x,a,b:a*x+b
+popt,pcov = curve_fit(f,np.log(times),np.log(diffs))
+plt.figure(figsize=(4,3))
+plt.plot(times,np.exp(f(np.log(times),*popt)),color='0.5',ls='dashed',lw=2)
+
+plt.plot(1115,0.000119196,marker='.',ms=9,color='steelblue',label='AMR',ls='None')
+plt.loglog(times,diffs,ls="None",marker='.',color='k',ms=9,label='uniform')
+plt.xlabel('computation time (s)')
+plt.ylabel('total error')
+plt.legend(frameon=False)
+plt.tight_layout()
+plt.show()
 
 def compute_port_power(ds,AMR=False,ref_val=2e-4,max_iters=5,remesh_every=50):
     ''' Compute the output port powers for a 3 port lantern, given some simulation parameters. '''
@@ -61,5 +81,5 @@ def compute_port_power(ds,AMR=False,ref_val=2e-4,max_iters=5,remesh_every=50):
     return np.array(output_powers)
 
 # example of how to use
-output = compute_port_power(1/64,False)
-print(output)
+#output = compute_port_power(1/64,False)
+#print(output)

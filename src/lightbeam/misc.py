@@ -26,8 +26,10 @@ def resize2(image,newshape):
 
     return RectBivariateSpline(xpix,ypix,image)(xpix_new,ypix_new)
 
-def overlap(u1,u2,weight=1):
-    return weight*np.abs(np.sum(np.conj(u2)*u1))
+def overlap(u1,u2,weight=1,c=False):
+    if not c:
+        return weight*np.abs(np.sum(np.conj(u1)*u2))
+    return weight * np.sum(np.conj(u1)*u2)
 
 def overlap_nonu(u1,u2,weights):
     return np.abs(np.sum(weights*np.conj(u2)*u1))
