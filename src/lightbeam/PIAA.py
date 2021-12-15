@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, UnivariateSpline
 import hcipy as hc
-import LPmodes
+from lightbeam import LPmodes
 from scipy.special import jn,kn
 from scipy.integrate import quad
 from scipy.optimize import brentq
