@@ -505,7 +505,7 @@ class Prop3D:
             _z_ = z__ + _mesh.half_dz
             __z = z__ + _mesh.dz
             
-            if self.field is not None and __z == za_keep[counter]:
+            if self.field is not None and counter < len(za_keep) and __z == za_keep[counter]:
                 # record the field
                 self.field[counter] = u0[xyslice]
                 counter += 1
