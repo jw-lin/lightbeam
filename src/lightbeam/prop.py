@@ -370,24 +370,27 @@ class Prop3D:
             _c[ix] = self._cpmly[:,None]
 
     @timeit 
-    def prop2end(self,_u,xyslice=None,zslice=None,u1_func=None,writeto=None,ref_val=5.e-6,remesh_every=20,dynamic_n0 = False,fplanewidth=0):
+    def prop2end(self,_u,monitor_func=None,ref_val=5.e-6,remesh_every=20,dynamic_n0 = False,fplanewidth=0,writeto=None,xyslice=None,zslice=None):
+        
         _mesh = self._mesh
         PML = _mesh.PML
 
-        if not (xyslice is None and zslice is None):
-            za_keep = _mesh.za[zslice]
-            if type(za_keep) == np.ndarray:
-                minz, maxz = za_keep[0],za_keep[-1]
-                shape = (len(za_keep),*_mesh.xg[xyslice].shape)
+        if writeto is not None:
+            # then we need to save some field information
+            if xyslice is None and zslice is None:
+                # save everything
+                za_keep = _mesh.za
+                shape = (len(za_keep),*_mesh.xg.shape)
             else:
-                raise Exception('uhh not implemented')
-            
+                # save a slice
+                za_keep = _mesh.za[zslice]
+                shape = (len(za_keep),*_mesh.xg[xyslice].shape)
+
             self.field = np.zeros(shape,dtype=c128)
 
         #pull xy mesh
         xy = _mesh.xy
         dx,dy = xy.dx0,xy.dy0
-
 
         if fplanewidth == 0:
             xa_in = np.linspace(-_mesh.xw/2,_mesh.xw/2,xy.shape0_comp[0])
@@ -495,19 +498,17 @@ class Prop3D:
             #print(self.totalpower[i])
 
             ## Other monitors ##
-            if u1_func is not None:
-                lp = norm_nonu(u1_func(xy.xg,xy.yg),weights)
-                self.power[i] = power(overlap_nonu(u,lp,weights),2)
+            if monitor_func is not None:
+                monitor_field = norm_nonu(monitor_func(xy.xg,xy.yg),weights)
+                self.power[i] = power(overlap_nonu(u,monitor_field,weights),2)
 
             _z_ = z__ + _mesh.half_dz
             __z = z__ + _mesh.dz
             
-            if self.field is not None and (minz<=__z<=maxz):
-                ix0,ix1,ix2,ix3 = _mesh.get_loc() 
-                mid = int(u0.shape[1]/2)
-
-                self.field[counter][ix0:ix1+1] = u0[:,mid] ## FIX ##
-                counter+=1
+            if self.field is not None and __z == za_keep[counter]:
+                # record the field
+                self.field[counter] = u0[xyslice]
+                counter += 1
 
             #avoid remeshing on step 0 
             if (i+1)%remesh_every== 0:
