@@ -14,3 +14,4 @@ J. Shibayama, K. Matsubara, M. Sekiguchi, J. Yamauchi and H. Nakano, "Efficient 
 
 The Beam-Propagation Method. (2015). In Beam Propagation Method for Design of Optical Waveguide Devices (pp. 22–70). <a href="https://onlinelibrary.wiley.com/doi/book/10.1002/9781119083405">  doi:10.1002/9781119083405.ch2</a>
 
+(I'm also working on a faster Julia version, stay tuned ...)
