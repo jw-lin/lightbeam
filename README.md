@@ -1,5 +1,5 @@
 # lightbeam
-Simulate light through weakly guiding waveguides using the finite-differences beam propagation method on an adaptive mesh.
+Simulate light through weakly guiding waveguides using the finite-differences beam propagation method on an adaptive grid.
 
 ## installation
 Use pip: `pip install git+https://github.com/jw-lin/lightbeam.git`
