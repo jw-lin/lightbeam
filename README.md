@@ -4,7 +4,7 @@ Simulate light through weakly guiding waveguides using the finite-differences be
 ## installation
 Use pip: `pip install git+https://github.com/jw-lin/lightbeam.git`
 
-Python dependencies: `numpy`,`scipy`,`matplotlib`,`numba`,`numexpr`
+Python dependencies: `numpy`,`scipy`,`matplotlib`,`numba`,`numexpr`,`jupyter`
 
 ## getting started
 Check out the Python notebook in the `tutorial` folder for a quickstart guide. <a href="tutorial/Lightbeam.ipynb">Direct link.</a>
