@@ -2,7 +2,11 @@
 Simulate light through weakly guiding waveguides using the finite-differences beam propagation method on an adaptive grid.
 
 ## installation
-Use pip: `pip install git+https://github.com/jw-lin/lightbeam.git`
+Use pip: 
+
+```
+pip install git+https://github.com/jw-lin/lightbeam.git
+```
 
 Python dependencies: `numpy`,`scipy`,`matplotlib`,`numba`,`numexpr`,`jupyter`
 
