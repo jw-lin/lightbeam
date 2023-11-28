@@ -59,7 +59,7 @@ xg,yg  = np.meshgrid(xa,ya)
 
 u0 = normalize(LPmodes.lpfield(xg,yg,2,1,rclad,wl0,nclad,njack,'cos'))
 
-fplanewidth = 0 # manually reset the width of the input field. set to 0 to match field extend with grid extent.
+fplanewidth = 0 # manually reset the width of the input field. set to 0 to match field extent with grid extent.
 
 #####################
 ## reference index ##
