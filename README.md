@@ -8,6 +8,12 @@ Use pip:
 pip install git+https://github.com/jw-lin/lightbeam.git
 ```
 
+Update:
+
+```
+pip install --force-reinstall git+https://github.com/jw-lin/lightbeam.git
+```
+
 Python dependencies: `numpy`,`scipy`,`matplotlib`,`numba`,`numexpr`,`jupyter`
 
 ## getting started
