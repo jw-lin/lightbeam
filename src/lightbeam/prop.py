@@ -16,20 +16,10 @@ from lightbeam.misc import timeit, overlap, normalize,printProgressBar, overlap_
 
 # maybe adaptive z stepping
 # get a better refinement criterion -- now weighting partially by 2nd deriv. still could use some work
-# compute r = 1 and r=/=1 points separately? -- I TRIED IT -- WHY IS THIS SLOWER
 
-# more efficient ways to store arrays with many repeated values -- some sort of sparse-like data structure?
-
-# optimize tri_solve_vec : maybe try out dask (parallelize) -- WHY IS THIS ALSO SLOWER
-
-#ignore shifting of IOR arrays in trimats calc? 
+# more efficient ways to store arrays with many repeated values -- sparse data structure?
 
 ## readability
-
-# actually add doc strings
-# combine some functions into "remesh" and "recompute" functions
-# remove unused functions
-# move all the eval strings somewhere else (together)
 
 def genc(shape):
     return np.empty(shape,dtype=c128,order='F')
@@ -642,11 +632,8 @@ class Prop3D:
         #resample the field onto the smaller xy mesh (in the smaller mesh's computation zone)
         u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
 
-        _power2 = overlap(u0,u0,dx*dy)
-
         #now we pad w/ zeros to extend it into the PML zone
         u0 = np.pad(u0,((PML,PML),(PML,PML)))
-
 
         counter = 0
         total_iters = self._mesh.zres

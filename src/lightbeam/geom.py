@@ -25,7 +25,13 @@ def _arc(x, y0, y1, r):
     is traversed clockwise then the area is negative, otherwise it is
     positive.
     """
-    return 0.5 * r**2 * (np.arctan2(y1,x) - np.arctan2(y0,x))
+    thetas = np.empty_like(x)
+    mask = (x==0)
+    thetas[mask] = np.pi/2*(np.sign(y1[mask])-np.sign(y0[mask]))
+    thetas[~mask] = np.arctan(y1[~mask]/x[~mask])-np.arctan(y0[~mask]/x[~mask])
+    return 0.5*r**2*thetas
+    #thetas = np.where(x==0, np.pi/2*(np.sign(y1)-np.sign(y0)),np.arctan(y1/x)-np.arctan(y0/x))
+    #return 0.5 * r**2 * (np.arctan2(y1,x) - np.arctan2(y0,x))
 
 def _chord(x, y0, y1):
     """
@@ -47,8 +53,8 @@ def _oneside(x, y0, y1, r):
     if np.all((x==0)): return x
 
     sx = x.shape
-    ans = np.zeros(sx, dtype=np.float)
-    yh = np.zeros(sx, dtype=np.float)
+    ans = np.zeros(sx, dtype=np.float64)
+    yh = np.zeros(sx, dtype=np.float64)
     to = (abs(x) >= r)
     ti = (abs(x) < r)
     if np.any(to):

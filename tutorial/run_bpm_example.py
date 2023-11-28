@@ -1,9 +1,9 @@
 ''' example script for running the beamprop code in prop.py'''
 import numpy as np
-from mesh import RectMesh3D
-from prop import Prop3D
-from misc import normalize,overlap,getslices,overlap_nonu,norm_nonu
-import LPmodes
+from lightbeam.mesh import RectMesh3D
+from lightbeam.prop import Prop3D
+from lightbeam.misc import normalize,overlap_nonu,norm_nonu
+from lightbeam import LPmodes
 import matplotlib.pyplot as plt
 from config_example import *
 
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     plt.show()
 
     # run the propagator (required)
-    u,u0 = prop.prop2end(u0,xyslice=None,zslice=None,u1_func = u1_func,writeto=writeto,ref_val=ref_val,remesh_every=remesh_every,dynamic_n0=dynamic_n0,fplanewidth=fplanewidth)
+    u,u0 = prop.prop2end(u0,monitor_func=monitor_func,xyslice=None,zslice=None,writeto=writeto,ref_val=ref_val,remesh_every=remesh_every,dynamic_n0=dynamic_n0,fplanewidth=fplanewidth)
 
     # compute power in output ports (optional)
 
@@ -37,14 +37,9 @@ if __name__ == "__main__":
 
     modes = []
     for x,y in zip(xpos,ypos):
-        mode = norm_nonu(LPmodes.lpfield(xg-x,yg-y,0,1,2.2,wl0,ncore,nclad),w)
+        mode = norm_nonu(LPmodes.lpfield(xg-x,yg-y,0,1,rcore/scale,wl0,ncore,nclad),w)
         modes.append(mode)
     
-    modes0 = [] 
-    for x,y in zip(xpos,ypos):
-        mode = normalize(LPmodes.lpfield(xg0-x,yg0-y,0,1,2.2,wl0,ncore,nclad),w0)
-        modes0.append(mode)
-
     SMFpower=0
     print("final field power decomposition:")
     for i in range(len(modes)):

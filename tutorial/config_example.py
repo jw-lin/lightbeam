@@ -25,7 +25,7 @@ xw0 = 128 # simulation zone x width (um)
 yw0 = 128 # simulation zone y width (um)
 zw = zex
 ds = 1 # base grid resolution (um)
-dz = 1 # z stepping resolution (um)
+dz = 3 # z stepping resolution (um)
 
 #############################
 ## mesh refinement options ##
@@ -50,8 +50,8 @@ sig_max = 3. + 0.j
 ######################
 import numpy as np
 import matplotlib.pyplot as plt
-import LPmodes
-from misc import normalize
+from lightbeam import LPmodes
+from lightbeam.misc import normalize
 
 xa = np.linspace(-xw0/2,xw0/2,int(xw0/ds)+1)
 ya = np.linspace(-yw0/2,yw0/2,int(yw0/ds)+1)
@@ -72,7 +72,7 @@ dynamic_n0 = False
 ## monitor field ##
 ###################
 
-u1_func = None
+monitor_func = None
 
 #############################
 ## write out field dist to ##
@@ -81,7 +81,7 @@ u1_func = None
 writeto = None
 
 # generate optical element
-import optics
+from lightbeam import optics
 optic = optics.lant19(rcore,rclad,ncore,nclad,njack,rclad/3,zex,final_scale=1/scale)
 
 
