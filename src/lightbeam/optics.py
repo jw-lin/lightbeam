@@ -245,14 +245,16 @@ class lant6_saval(OpticSys):
     def __init__(self,rcore0,rcore1,rcore2,rcore3,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         
         t = 2*np.pi/5
-
-        core0 = scaled_cyl([0,0],rcore0,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        
-        core1 = scaled_cyl([offset0,0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core2 = scaled_cyl([offset0*np.cos(t),offset0*np.sin(t)],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core3 = scaled_cyl([offset0*np.cos(2*t),offset0*np.sin(2*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core4 = scaled_cyl([offset0*np.cos(3*t),offset0*np.sin(3*t)],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core5 = scaled_cyl([offset0*np.cos(4*t),offset0*np.sin(4*t)],rcore3,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core_locs = [[0,0]]
+        for i in range(5):
+            core_locs.append([offset0*np.cos(i*t),offset0*np.sin(i*t)])
+        self.core_locs = np.array(core_locs)
+        core0 = scaled_cyl(core_locs[0],rcore0,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl(core_locs[1],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl(core_locs[2],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core3 = scaled_cyl(core_locs[3],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core4 = scaled_cyl(core_locs[4],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core5 = scaled_cyl(core_locs[5],rcore3,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core5,core4,core3,core2,core1,core0]
