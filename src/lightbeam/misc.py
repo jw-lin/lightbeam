@@ -32,7 +32,14 @@ def overlap(u1,u2,weight=1,c=False):
     return weight * np.sum(np.conj(u1)*u2)
 
 def overlap_nonu(u1,u2,weights):
-    return np.abs(np.sum(weights*np.conj(u2)*u1))
+    return np.abs(np.sum(weights*np.conj(u1)*u2))
+
+def overlap_nonu_trap(u1,u2,xa,ya,c=False):
+    integrand = np.conj(u1)*u2
+    integral = np.traps(np.trapz(integrand,ya,axis=-1),xa)
+    if c:
+        return integral
+    return np.abs(integral)
 
 def normalize(u0,weight=1,normval = 1):
     norm = np.sqrt(normval/overlap(u0,u0,weight))
