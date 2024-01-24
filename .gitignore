@@ -130,3 +130,5 @@ dmypy.json
 .pyre/
 
 settings.json
+tutorial/config_example_6port_ms.py
+tutorial/config_example_6port.py
