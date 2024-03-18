@@ -108,6 +108,8 @@ class scaled_cyl(OpticPrim):
         self.z_ex = z_ex
         self.z_offset = z_offset
 
+        self.AA = True
+
         def linear_func(_min,_max):
             slope =  (_max - _min)/self.z_ex
             def _inner_(z):
@@ -144,11 +146,16 @@ class scaled_cyl(OpticPrim):
         if not (self.z_offset <= z <= self.z_offset+self.z_ex):
             return
 
+        if not self.AA:
+            super().set_IORsq(out,z,coeff)
+            return
+
         center = (self.xoffset_func(z),self.yoffset_func(z))
         scale = self.scale_func(z)
         bbox,bboxh = self.bbox_idx(z)  
         xg = self.xymesh.xg[bbox]
         yg = self.xymesh.yg[bbox]
+
         xhg = self.xymesh.xhg[bboxh]
         yhg = self.xymesh.yhg[bboxh]
 
